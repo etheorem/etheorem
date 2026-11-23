@@ -43,7 +43,7 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Fulu
 
-open EthCLLib.Spec (HasherTag StateTransitionError Checked liftErr sszGetIdx IdxRead IndexError)
+open EthCLLib.Spec (StateTransitionError Checked liftErr sszGetIdx IdxRead IndexError)
 open EthCLSpecs.Fulu (Preset BeaconState ValidatorIndex Gwei increaseBalance decreaseBalance
   modBalance)
 open EthCLLib.Proofs (getAt_sszList_clUint64 add_ok_iff add_value)
@@ -63,7 +63,7 @@ writes `set!` with `f` applied to the old element, so the writer is one plain re
 The two mutator readings below close into this shape. `rfl`: on the plain `State`, `sszModify`
 unfolds to the record update itself. -/
 @[characterizes EthCLSpecs.Fulu.modBalance]
-theorem modBalance_eq [Preset] [HasherTag] :
+theorem modBalance_eq [Preset] :
     ∀ (state : BeaconState) (i : ValidatorIndex) (f : Gwei → Gwei),
       modBalance state i f =
         { state with balances := state.balances.set! i.toPlainNat (f state.balances[i.toPlainNat]!) } :=
@@ -76,7 +76,7 @@ the element: the monad law `bind (pure v) k = k v` at the runner. `rfl`: every l
 instance projection, a definition, or a match on a constructor. This is the step that puts the
 read's element and the equation's `some` arm on one variable, so the checked-sum branch
 tactics below decide one `if` shared by both sides. -/
-private theorem bind_liftErr_ok [Preset] [HasherTag] {α β : Type} (v : α) (k : α → FuluRun β) :
+private theorem bind_liftErr_ok [Preset] {α β : Type} (v : α) (k : α → FuluRun β) :
     bind (liftErr (Except.ok v : Except IndexError α)) k = k v :=
   rfl
 
@@ -98,7 +98,7 @@ fault shape the reject theorems below spell). Otherwise it returns the new state
 unchanged. `modBalance_eq` turns the written state into the plain record update
 (`increaseBalance_run_no_wrap`). -/
 @[characterizes EthCLSpecs.Fulu.increaseBalance]
-theorem increaseBalance_run_eq [Preset] [HasherTag] :
+theorem increaseBalance_run_eq [Preset] :
     ∀ (state preState : BeaconState) (i : ValidatorIndex) (delta : Gwei),
       (increaseBalance (StateTransition := FuluRun) state i delta).run preState
         = (match state.balances.val[i.toPlainNat]? with
@@ -132,7 +132,7 @@ theorem increaseBalance_run_eq [Preset] [HasherTag] :
 produces no state. The pyspec reads `state.balances[index]` there and raises `IndexError`,
 which the reference runner catches. `pcLoop` reaches this with a `target_index` read from
 `pending_consolidations`. -/
-theorem increaseBalance_run_outOfRange [Preset] [HasherTag] :
+theorem increaseBalance_run_outOfRange [Preset] :
     ∀ (state preState : BeaconState) (i : ValidatorIndex) (delta : Gwei),
       ¬ i.toPlainNat < state.balances.size →
       (increaseBalance (StateTransition := FuluRun) state i delta).run preState
@@ -150,7 +150,7 @@ The fault payload is the add's own `ArithFault.range` `"+"`, diagnostic only. Th
 is the real arithmetic obligation, the negation of `add_ok_iff`'s success condition on the
 plain values. The proof stays a hand proof: the law set reaches the add's success and value,
 but not the fault payload's identity, which the conclusion spells. -/
-theorem increaseBalance_run_overflow [Preset] [HasherTag] :
+theorem increaseBalance_run_overflow [Preset] :
     ∀ (state preState : BeaconState) (i : ValidatorIndex) (delta : Gwei),
       i.toPlainNat < state.balances.size →
       state.balances[i.toPlainNat]!.toPlainNat + delta.toPlainNat ≥ 2 ^ 64 →
@@ -179,7 +179,7 @@ the run has to check and no intermediate `Except` value. The conclusion names th
 value and reads it back through `add_value`: the stored balance is the exact natural-number
 sum of the old balance and `delta`, with no wrap through `2 ^ 64`. Laws: `add_ok_iff`,
 `add_value` (both over the fused `add_eq_ok`). -/
-theorem increaseBalance_run_no_wrap [Preset] [HasherTag] :
+theorem increaseBalance_run_no_wrap [Preset] :
     ∀ (state preState : BeaconState) (i : ValidatorIndex) (delta : Gwei),
       i.toPlainNat < state.balances.size →
       state.balances[i.toPlainNat]!.toPlainNat + delta.toPlainNat < 2 ^ 64 →
@@ -211,7 +211,7 @@ range it returns the new state, `modBalance state i …`, the source's own write
 difference, and leaves the threaded state `preState` unchanged. `modBalance_eq` turns the written
 state into the plain record update (`decreaseBalance_run_no_underflow`). -/
 @[characterizes EthCLSpecs.Fulu.decreaseBalance]
-theorem decreaseBalance_run_eq [Preset] [HasherTag] :
+theorem decreaseBalance_run_eq [Preset] :
     ∀ (state preState : BeaconState) (i : ValidatorIndex) (delta : Gwei),
       (decreaseBalance (StateTransition := FuluRun) state i delta).run preState
         = (match state.balances.val[i.toPlainNat]? with
@@ -231,7 +231,7 @@ theorem decreaseBalance_run_eq [Preset] [HasherTag] :
 
 /-- **Out of range.** The mirror of `increaseBalance_run_outOfRange`. The pyspec reads
 `state.balances[index]` before it writes, and that read raises `IndexError`. -/
-theorem decreaseBalance_run_outOfRange [Preset] [HasherTag] :
+theorem decreaseBalance_run_outOfRange [Preset] :
     ∀ (state preState : BeaconState) (i : ValidatorIndex) (delta : Gwei),
       ¬ i.toPlainNat < state.balances.size →
       (decreaseBalance (StateTransition := FuluRun) state i delta).run preState
@@ -247,7 +247,7 @@ theorem decreaseBalance_run_outOfRange [Preset] [HasherTag] :
 `saturatingSub balance delta` into that one balance. `decreaseBalance_written_toNat` reads the
 stored balance back as the truncating `Nat` difference, so a bare `UInt64` subtraction, which
 would wrap to a balance near `2 ^ 64` on the underflowing arm, is excluded. -/
-theorem decreaseBalance_run_no_underflow [Preset] [HasherTag] :
+theorem decreaseBalance_run_no_underflow [Preset] :
     ∀ (state preState : BeaconState) (i : ValidatorIndex) (delta : Gwei),
       i.toPlainNat < state.balances.size →
       (decreaseBalance (StateTransition := FuluRun) state i delta).run preState

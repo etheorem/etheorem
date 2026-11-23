@@ -15,7 +15,7 @@ is a monad over an arbitrary store type, so it belongs to no fork, and the theor
 that pin it live in `EthCLSpecs/Proofs/Gloas/` and `EthCLSpecs/Proofs/Heze/` alike.
 
 `SPEC_AUTHORING_MODEL.md` sets out a fast/pure duality across four axes, and
-`SPECS_ARCHITECTURE.md` §11.1 states that the fast configuration (`FastBox`,
+`SPECS_ARCHITECTURE.md` §11.1 states that the fast configuration (`fastHasherTag`,
 `EStateM`, `hashMap`) is never a proof target. This is the pure column's store
 monad, the store-side counterpart of `EthCLSpecs/Proofs/Gloas/Run.lean`'s `GloasRun`.
 

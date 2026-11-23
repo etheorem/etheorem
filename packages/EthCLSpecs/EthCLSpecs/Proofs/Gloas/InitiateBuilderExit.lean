@@ -45,7 +45,7 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Gloas
 
-open EthCLLib.Spec (HasherTag Checked StateTransitionError sszGetIdx IdxRead liftErr IndexError)
+open EthCLLib.Spec (Checked StateTransitionError sszGetIdx IdxRead liftErr IndexError)
 open EthCLLib.Proofs (add_ok_iff add_value run_bind except_bind_ok except_bind_error)
 open EthCLSpecs.Gloas (Preset Config BuilderIndex Epoch BeaconState State)
 open EthCLSpecs.Gloas (minimal mainnet minimalConfig mainnetConfig)
@@ -68,7 +68,7 @@ range split happens at the read. -/
 /-- `sszGetIdx`'s in-range read is the identity action at the Gloas runner, so the body's
 bind on it substitutes the element: the monad law `bind (pure v) k = k v` at the runner.
 `rfl`: every layer is an instance projection, a definition, or a match on a constructor. -/
-private theorem bind_liftErr_ok [Preset] [HasherTag] {α β : Type} (v : α) (k : α → GloasRun β) :
+private theorem bind_liftErr_ok [Preset] {α β : Type} (v : α) (k : α → GloasRun β) :
     bind (liftErr (Except.ok v : Except IndexError α)) k = k v :=
   rfl
 
@@ -93,7 +93,7 @@ write. Stated in `.run` form on the plain `BeaconState` — the Gloas `State` is
 record, so this one equation is both the value-level contract and the shape the
 fork-choice bridge consumes by application. -/
 @[characterizes EthCLSpecs.Gloas.initiateBuilderExit]
-theorem initiateBuilderExit_run_eq [Preset] [HasherTag] [Config] :
+theorem initiateBuilderExit_run_eq [Preset] [Config] :
     ∀ (preState : BeaconState) (builderIndex : BuilderIndex),
       (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run preState
         = match preState.builders.val[builderIndex.toPlainNat]? with
@@ -140,7 +140,7 @@ theorem initiateBuilderExit_run_eq [Preset] [HasherTag] [Config] :
 the plain `Nat` sum, while every other builder and the registry's `.size` are unchanged.
 The index-level reading of `initiateBuilderExit_run_eq` through `ProgressiveList.set!`'s
 own lemmas. -/
-theorem initiateBuilderExit_run_inRange [Preset] [HasherTag] [Config] :
+theorem initiateBuilderExit_run_inRange [Preset] [Config] :
     ∀ (preState : BeaconState) (builderIndex : BuilderIndex),
       builderIndex.toPlainNat < preState.builders.size →
       (currentEpochOf preState).toPlainNat
@@ -177,7 +177,7 @@ theorem initiateBuilderExit_run_inRange [Preset] [HasherTag] [Config] :
 /-- **Out of range.** The raising read rejects before the withdrawability sum runs: past the
 registry's end the run rejects with the `.outOfBounds` fault, the `IndexError` the pinned
 Python read `state.builders[builder_index]` raises, and no state is produced. -/
-theorem initiateBuilderExit_run_outOfRange [Preset] [HasherTag] [Config] :
+theorem initiateBuilderExit_run_outOfRange [Preset] [Config] :
     ∀ (preState : BeaconState) (builderIndex : BuilderIndex),
       ¬ builderIndex.toPlainNat < preState.builders.size →
       (initiateBuilderExit (StateTransition := GloasRun) builderIndex).run preState
@@ -206,7 +206,7 @@ the *pre*-state's `currentEpochOf`), the run succeeds and the post-state builder
 `withdrawableEpoch.toPlainNat` is exactly the natural-number sum
 `currentEpochOf(pre-state).toPlainNat + MIN_BUILDER_WITHDRAWABILITY_DELAY.toPlainNat`,
 with no silent wrap through `2 ^ 64`. -/
-theorem initiateBuilderExit_run_inRange_no_wrap [Preset] [HasherTag] [Config] :
+theorem initiateBuilderExit_run_inRange_no_wrap [Preset] [Config] :
     ∀ (preState : BeaconState) (builderIndex : BuilderIndex),
       builderIndex.toPlainNat < preState.builders.size →
       (currentEpochOf preState).toPlainNat
@@ -246,7 +246,7 @@ transition. -/
 /-- `currentEpochOf preState` is the slot's plain quotient by `SLOTS_PER_EPOCH`. The
 one fact the preset corollaries need, stated at the checked kind through
 `computeEpochAtSlot_toPlainNat`. -/
-theorem currentEpochOf_toPlainNat [Preset] [HasherTag] (state : BeaconState) :
+theorem currentEpochOf_toPlainNat [Preset] (state : BeaconState) :
     (currentEpochOf state).toPlainNat = state.slot.toPlainNat / Preset.slotsPerEpoch := by
   simp only [currentEpochOf]
   exact computeEpochAtSlot_toPlainNat state.slot
@@ -255,7 +255,7 @@ theorem currentEpochOf_toPlainNat [Preset] [HasherTag] (state : BeaconState) :
 `slotsPerEpoch = 8`, `minBuilderWithdrawabilityDelay = 2`:
 `currentEpochOf preState ≤ (2 ^ 64 - 1) / 8`, so the sum with `2` is nowhere near
 `2 ^ 64`, for every `preState`. -/
-theorem initiateBuilderExit_run_inRange_no_wrap_minimal [HasherTag] :
+theorem initiateBuilderExit_run_inRange_no_wrap_minimal :
     letI : Preset := minimal
     letI : Config := minimalConfig
     ∀ (preState : BeaconState) (builderIndex : BuilderIndex),
@@ -269,7 +269,7 @@ theorem initiateBuilderExit_run_inRange_no_wrap_minimal [HasherTag] :
   letI : Preset := minimal
   letI : Config := minimalConfig
   intro preState builderIndex hidx
-  refine @initiateBuilderExit_run_inRange_no_wrap minimal _ minimalConfig preState
+  refine @initiateBuilderExit_run_inRange_no_wrap minimal minimalConfig preState
     builderIndex hidx ?_
   -- `toPlainNat` is the underlying word's `toNat`, so the word lemma gives the bound.
   have hslot : preState.slot.toPlainNat < 18446744073709551616 :=
@@ -284,7 +284,7 @@ theorem initiateBuilderExit_run_inRange_no_wrap_minimal [HasherTag] :
 `slotsPerEpoch = 32`, `minBuilderWithdrawabilityDelay = 64`:
 `currentEpochOf preState ≤ (2 ^ 64 - 1) / 32`, so the sum with `64` is nowhere near
 `2 ^ 64`, for every `preState`. -/
-theorem initiateBuilderExit_run_inRange_no_wrap_mainnet [HasherTag] :
+theorem initiateBuilderExit_run_inRange_no_wrap_mainnet :
     letI : Preset := mainnet
     letI : Config := mainnetConfig
     ∀ (preState : BeaconState) (builderIndex : BuilderIndex),
@@ -298,7 +298,7 @@ theorem initiateBuilderExit_run_inRange_no_wrap_mainnet [HasherTag] :
   letI : Preset := mainnet
   letI : Config := mainnetConfig
   intro preState builderIndex hidx
-  refine @initiateBuilderExit_run_inRange_no_wrap mainnet _ mainnetConfig preState
+  refine @initiateBuilderExit_run_inRange_no_wrap mainnet mainnetConfig preState
     builderIndex hidx ?_
   -- `toPlainNat` is the underlying word's `toNat`, so the word lemma gives the bound.
   have hslot : preState.slot.toPlainNat < 18446744073709551616 :=

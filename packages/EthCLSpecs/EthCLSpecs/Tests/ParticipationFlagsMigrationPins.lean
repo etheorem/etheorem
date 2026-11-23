@@ -140,7 +140,6 @@ private def attRun (P : Preset) (s : Slot) (part : Option (Array ParticipationFl
 flag byte is `0x80`, bit 7 is set, all eight participate. -/
 private def pinFlag7Participates : Bool :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   match getUnslashedParticipatingIndices (attState minimal 20 (some (Array.replicate 8 0x80)))
       7 2 with
   | .ok idx => idx.size == 8
@@ -153,7 +152,6 @@ the typed range fault (the pin's `256 is out of range for ParticipationFlags
 answered `false` without raising. -/
 private def pinFlag8Raises : Bool :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   match getUnslashedParticipatingIndices (attState minimal 20 (some (Array.replicate 8 0x80)))
       8 2 with
   | .error (.arithmetic _) => true
@@ -190,7 +188,6 @@ gate skips both, so the participation list and the balances are unchanged. A
 dropped gate re-accrues the reward, which the balance read-back catches. -/
 private def pinFuluSecondRunChangesNothing : Bool :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let att := noTargetAtt minimal 17 2
   match attRun minimal 19 (some (Array.replicate 8 0)) att with
   | .error _ _ => false
@@ -295,7 +292,6 @@ example : pinGloasEarnedFlagReads = true := by native_decide
 unchanged. -/
 private def pinGloasSecondRunChangesNothing : Bool :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let att := gNoTargetAtt minimal 17 2
   match gAttRun minimal 19 (some (Array.replicate 8 0)) att with
   | .error _ _ => false

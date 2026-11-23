@@ -33,7 +33,7 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Gloas
 
-open EthCLLib.Spec (HasherTag Checked StateTransitionError getAt liftErr)
+open EthCLLib.Spec (Checked StateTransitionError getAt liftErr)
 open EthCLSpecs.Gloas (BeaconState BuilderIndex Builder Gwei Preset)
 open EthCLSpecs.Gloas (canBuilderCoverBid getPendingBalanceToWithdrawForBuilder)
 open EthCLLib.Proofs (add_ok_iff add_value sub_ok_iff sub_value)
@@ -42,7 +42,7 @@ open EthCLLib.Proofs (add_ok_iff add_value sub_ok_iff sub_value)
 reserve add bind in order; the guard then picks a branch, and only the else branch binds
 the checked cover subtraction. This is the body itself, so `rfl` states it. -/
 @[characterizes EthCLSpecs.Gloas.canBuilderCoverBid]
-theorem canBuilderCoverBid_eq [Preset] [HasherTag] :
+theorem canBuilderCoverBid_eq [Preset] :
     ∀ (state : BeaconState) (builderIndex : BuilderIndex) (bidAmount : Gwei),
       canBuilderCoverBid state builderIndex bidAmount
         = ((do
@@ -64,7 +64,7 @@ name the arithmetic the chain checks and no intermediate `minBalance` or `cover`
 appears: the conclusion reads the remainder off through `add_value` and `sub_value` as
 one `Nat` inequality. No claim is made that pending-obligation accumulation is
 overflow-free. Laws: `add_ok_iff`, `add_value`, `sub_ok_iff`, `sub_value`. -/
-theorem canBuilderCoverBid_ok_iff [Preset] [HasherTag] :
+theorem canBuilderCoverBid_ok_iff [Preset] :
     ∀ (state : BeaconState) (builderIndex : BuilderIndex) (builder : Builder)
       (bidAmount pending : Gwei),
       getAt state.builders builderIndex = .ok builder →
@@ -165,7 +165,7 @@ balance, an addition that cannot wrap. A corollary of `canBuilderCoverBid_ok_iff
 by arithmetic: the remainder there is exact because the fit hypothesis bounds the
 subtrahend. Laws used: `canBuilderCoverBid_ok_iff` (hence `add_value`,
 `sub_value`). -/
-theorem canBuilderCoverBid_ok_toNat_add_le [Preset] [HasherTag] :
+theorem canBuilderCoverBid_ok_toNat_add_le [Preset] :
     ∀ (state : BeaconState) (builderIndex : BuilderIndex) (builder : Builder)
       (bidAmount pending : Gwei),
       getAt state.builders builderIndex = .ok builder →

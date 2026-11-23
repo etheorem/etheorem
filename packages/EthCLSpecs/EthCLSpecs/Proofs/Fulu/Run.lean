@@ -16,13 +16,13 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Fulu
 
-open EthCLLib.Spec (HasherTag StateTransitionError)
+open EthCLLib.Spec (StateTransitionError)
 open EthCLSpecs.Fulu (Preset State)
 
 /-- The monad the Fulu spec bodies are proved at: `StateT` over `Except`, threading the plain
 Fulu `BeaconState` and rejecting with `StateTransitionError`. `abbrev` (reducible), so a goal
 that mentions it unifies with the spelled-out type. -/
-abbrev FuluRun [Preset] [HasherTag] : Type → Type :=
+abbrev FuluRun [Preset] : Type → Type :=
   StateT State (Except StateTransitionError)
 
 end EthCLSpecs.Proofs.Fulu

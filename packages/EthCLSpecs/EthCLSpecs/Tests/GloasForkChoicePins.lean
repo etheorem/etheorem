@@ -41,17 +41,16 @@ same pattern as Heze's inclusion-list pins. `pinStore` mirrors Heze's
 `pinPilsStore` without the two FOCIL fields. -/
 
 /-- The pins' concrete fork-choice monad: the minimal preset over the deterministic
-`treeMap` and the FFI hasher. -/
-private abbrev PinM := EStateM StoreTransitionError (@Store minimal treeMap fastHasherTag)
+`treeMap`. -/
+private abbrev PinM := EStateM StoreTransitionError (@Store minimal treeMap)
 
 private def pinRoot : Root := Vector.replicate 32 9
 
 /-- A minimal empty Gloas `Store`: every field empty/zero, mirroring the
-`getForkchoiceStore` literal. The `letI`s fix the preset / hasher so the anonymous
-`Store` constructor synthesizes them. -/
-private def pinStore : @Store minimal treeMap fastHasherTag :=
+`getForkchoiceStore` literal. The `letI` fixes the preset so the anonymous `Store`
+constructor synthesizes it. -/
+private def pinStore : @Store minimal treeMap :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   { timeMs := 0, genesisTimeMs := 0
     justifiedCheckpoint := default, finalizedCheckpoint := default
     unrealizedJustifiedCheckpoint := default, unrealizedFinalizedCheckpoint := default
@@ -74,7 +73,6 @@ entry for the attested root, the pinned plain-`Dict` read; the pre-conversion
 private def pinRecordPtcVotesThrows : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   let data : PayloadAttestationData := { (default : PayloadAttestationData) with beaconBlockRoot := pinRoot }
   match (recordPtcVotes (map := treeMap) pinStore data #[0] : PinM (Store treeMap)).run pinStore with
   | .error (.missingKey _) _ => true
@@ -148,12 +146,10 @@ state.slot <= slot + SLOTS_PER_HISTORICAL_ROOT`: a `default` state has slot 0, s
 `get_block_root_at_slot(state, 0)` fails `0 < 0` where the pre-restore accessor
 mod-indexed silently. This locks the assert itself; the end-to-end
 `compute_pulled_up_tip` pjf reachability it opens up is conformance-gated rather than
-pinned (the epoch-boundary near-zero-stake fixture is finicky to construct). The pin
-hashes through the FFI `Sha256` (`fastHasherTag`), so `native_decide`. -/
+pinned (the epoch-boundary near-zero-stake fixture is finicky to construct). -/
 private def pinBlockRootRecencyRejects : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   let state : State := (default : @EthCLSpecs.Gloas.BeaconState minimal)
   match (getBlockRootAtSlot state 0 : EStateM StateTransitionError State Root).run state with
   | .error (.assert _) _ => true
@@ -163,12 +159,10 @@ example : pinBlockRootRecencyRejects = true := by native_decide
 /-- `getPtc` rejects (`.assert`) a slot before the Gloas fork: the
 `assert epoch >= GLOAS_FORK_EPOCH` that opens it at v1.7.0-beta.4. The default config's
 `GLOAS_FORK_EPOCH` is far in the future, so epoch 0 precedes the fork. Without the assert the
-read would return the zero-filled window entry, a committee of validator 0. The pin
-hashes through the FFI `Sha256` (`fastHasherTag`), so `native_decide`. -/
+read would return the zero-filled window entry, a committee of validator 0. -/
 private def pinPtcBeforeForkRejects : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   let state : State := (default : @EthCLSpecs.Gloas.BeaconState minimal)
   match (getPtc state 0 : EStateM StateTransitionError State _).run state with
   | .error (.assert _) _ => true
@@ -181,7 +175,6 @@ lookahead assert, and returns the window entry: the pair shows the fork epoch al
 private def pinPtcAtForkReads : Bool :=
   letI : Preset := minimal
   letI : Config := { minimalConfig with gloasForkEpoch := 0 }
-  letI : HasherTag := fastHasherTag
   let state : State := (default : @EthCLSpecs.Gloas.BeaconState minimal)
   match (getPtc state 0 : EStateM StateTransitionError State _).run state with
   | .ok _ _ => true
@@ -264,9 +257,8 @@ private def boostRootP : Root := Vector.replicate 32 2
 private def boostRootX : Root := Vector.replicate 32 3
 
 /-- The fixture store. `xTimely` is block `X`'s PTC-timeliness bit. -/
-private def boostStore (xTimely : Bool) : @Store minimal treeMap fastHasherTag :=
+private def boostStore (xTimely : Bool) : @Store minimal treeMap :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let state : State := (default : @EthCLSpecs.Gloas.BeaconState minimal)
   let blockP : BeaconBlock := { (default : BeaconBlock) with slot := 9 }
   let blockB : BeaconBlock := { (default : BeaconBlock) with slot := 10, parentRoot := boostRootP }

@@ -60,11 +60,11 @@ forkstruct LatestMessage where
 deriving instance Inhabited for LatestMessage
 
 /-- The Gloas fork-choice store, a `forkstruct` over its map backing and (via the auto
-`[Preset]`) the preset / hasher tag. Over the prior fork it adds the ePBS payload state:
+`[Preset]`) the preset. Over the prior fork it adds the ePBS payload state:
 the revealed `payloads`, the two per-block PTC vote arrays, and a two-element
 `blockTimeliness` (the attestation-due and PTC-due deadlines). At v1.7.0-beta.4 the clock is in
 milliseconds (`time_ms`, `genesis_time_ms`), as in phase0, both the checked kind. -/
-forkstruct Store (map : MapKind) [HasherTag] where
+forkstruct Store (map : MapKind) where
   timeMs                        : CLUint64
   genesisTimeMs                 : CLUint64
   justifiedCheckpoint           : Checkpoint

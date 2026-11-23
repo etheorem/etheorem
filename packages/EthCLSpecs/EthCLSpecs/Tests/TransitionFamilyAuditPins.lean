@@ -24,7 +24,6 @@ pin pair: two nearby inputs that land on its two sides.
 Gloas and Heze inherit both bodies. The Gloas pin shows that the inherited body
 carries the fix. The fixture states sit at slot `800` (epoch `100`). At the minimal
 preset `compute_activation_exit_epoch(100) = 100 + 1 + MAX_SEED_LOOKAHEAD = 105`.
-The pins hash through the FFI `Sha256` (`fastHasherTag`), so `native_decide`.
 -/
 
 set_option autoImplicit false
@@ -92,7 +91,6 @@ private def registryRun (st : @EthCLSpecs.Fulu.BeaconState minimal)
     (cfg : Config := minimalConfig) : Option (Nat × Nat × Nat) :=
   letI : Preset := minimal
   letI : Config := cfg
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (processRegistryUpdates : EStateM StateTransitionError
       (@EthCLSpecs.Fulu.BeaconState minimal) Unit).run st with
@@ -159,7 +157,6 @@ private def slashingsRun (st : @EthCLSpecs.Fulu.BeaconState oneSlotEpochs) :
     Bool ⊕ Nat :=
   letI : Preset := oneSlotEpochs
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (processSlashings : EStateM StateTransitionError
       (@EthCLSpecs.Fulu.BeaconState oneSlotEpochs) Unit).run st with
@@ -219,7 +216,6 @@ private def gloasRegistryRun (st : @EthCLSpecs.Gloas.BeaconState minimal) :
     Option (Nat × Nat) :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (processRegistryUpdates : EStateM StateTransitionError
       (@EthCLSpecs.Gloas.BeaconState minimal) Unit).run st with

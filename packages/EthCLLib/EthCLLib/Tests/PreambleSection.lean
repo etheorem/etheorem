@@ -65,7 +65,7 @@ state_preamble Toy
 
 -- `State` is the plain record: it *is* `Toy`, a `Toy` literal types as `State` with no
 -- wrapper (the section's `s0` below pins the literal form).
-example : @State mini fastHasherTag = @Toy mini := rfl
+example : @State mini = @Toy mini := rfl
 
 /-! ## A state-transition section (the macro opens the `section`) -/
 

@@ -31,7 +31,7 @@ def depositRequestPending [Preset] (dr : DepositRequest) (slot : Slot) : Pending
 `pendingDeposits`, and every other field, `depositRequestsStartIndex` included, keeps its
 value. -/
 @[characterizes EthCLSpecs.Gloas.processDepositRequest]
-theorem processDepositRequest_run [Preset] [HasherTag] (preState : BeaconState)
+theorem processDepositRequest_run [Preset] (preState : BeaconState)
     (dr : DepositRequest) :
     (processDepositRequest (StateTransition := GloasRun) dr).run preState
       = .ok ((), { preState with
@@ -39,7 +39,7 @@ theorem processDepositRequest_run [Preset] [HasherTag] (preState : BeaconState)
             (depositRequestPending dr preState.slot) }) := rfl
 
 /-- The run keeps `deposit_requests_start_index`. -/
-theorem processDepositRequest_keeps_startIndex [Preset] [HasherTag] (preState : BeaconState)
+theorem processDepositRequest_keeps_startIndex [Preset] (preState : BeaconState)
     (dr : DepositRequest) :
     ((processDepositRequest (StateTransition := GloasRun) dr).run preState).map
         (fun r => r.2.depositRequestsStartIndex)

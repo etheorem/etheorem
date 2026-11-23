@@ -32,14 +32,13 @@ namespace EthCLSpecs.Tests.GloasSlotMigrationPins
 
 open EthCLSpecs.Gloas
 
-/-- The pins' state-machine monad over the minimal preset and the FFI hasher. -/
-private abbrev PinM := EStateM StateTransitionError (@State minimal fastHasherTag)
+/-- The pins' state-machine monad over the minimal preset. -/
+private abbrev PinM := EStateM StateTransitionError (@State minimal)
 
 /-- A minimal Gloas state at slot `s` with the availability bits at ring indices `0` and
 `63` set, so the pins can see which index the clear hits. -/
-private def availabilityState (s : Slot) : @State minimal fastHasherTag :=
+private def availabilityState (s : Slot) : @State minimal :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   { (default : @EthCLSpecs.Gloas.BeaconState minimal) with
     slot := s
     executionPayloadAvailability := bitSet (bitSet default 0 true) 63 true }
@@ -73,9 +72,8 @@ example : pinProcessSlotBelowMaxClearsNextBit = true := by native_decide
 
 /-- A minimal Gloas state at slot `s` with eight active validators at the maximum
 effective balance, so every slot's PTC selection has a member and accepts at once. -/
-private def ptcWindowState (s : Slot) : @State minimal fastHasherTag :=
+private def ptcWindowState (s : Slot) : @State minimal :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let v : Validator :=
     { (default : Validator) with
       effectiveBalance := 2048000000000,
