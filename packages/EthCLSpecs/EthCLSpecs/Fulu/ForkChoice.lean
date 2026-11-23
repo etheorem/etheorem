@@ -11,7 +11,7 @@ boost). The store is a `forkstruct` (captured for inheritance); the section open
 with `fork_choice_section map`, so the handlers are monadic `StoreTransition` actions
 over the typed `StoreTransitionError` (`assert` / `missingKey` / `todo`),
 and the queries (`get_weight`, `get_head`, the reorg predicates) are pure functions
-of the boxed store.
+of the store.
 
 The handlers reuse the Fulu spine: `on_block` runs `state_transition` on a copy of
 the parent post-state through `runNestedStateTransition` (the one-way bridge that wraps an
@@ -20,7 +20,7 @@ runs `process_slots` and `compute_pulled_up_tip` runs
 `process_justification_and_finalization`, each best-effort through `EStateM.run`.
 
 The `Store` is parameterized by its finite-map backing (`EthCLLib.Spec.FcMap`); the
-runner fixes it to `hashMap` over `Sha256` boxed states.
+runner fixes it to `hashMap`, and roots the plain states with `Sha256`.
 -/
 
 set_option autoImplicit false
@@ -44,8 +44,8 @@ forkstruct LatestMessage where
 deriving instance Inhabited for LatestMessage
 
 /-- The fork-choice store, parameterized by its map backing and (via `forkstruct`'s
-auto `[Preset]`) the preset / hasher tag. The boxed states reuse the transition
-layer's `State` (`= SSZ.Box HasherTag.H BeaconState`). At v1.7.0-beta.4 the clock is in
+auto `[Preset]`) the preset. The stored states reuse the transition
+layer's `State` (the plain `BeaconState` record). At v1.7.0-beta.4 the clock is in
 milliseconds (`time_ms`, `genesis_time_ms`), so slot arithmetic needs no seconds-to-ms
 conversion past `get_forkchoice_store`. Both clock fields are `Uint64` in the pinned `Store`, so
 they are the checked kind.
@@ -53,7 +53,7 @@ they are the checked kind.
 A node is its block root here: the phase0 `ForkChoiceNode` carries only `root`, so the
 Fulu walks pass `Root` where the spec passes a node, and a membership test on nodes is a
 membership test on roots. -/
-forkstruct Store (map : MapKind) [HasherTag] where
+forkstruct Store (map : MapKind) where
   timeMs                        : CLUint64
   genesisTimeMs                 : CLUint64
   justifiedCheckpoint           : Checkpoint
@@ -161,7 +161,7 @@ filter reads `state.validators[index]` for every active index, a raising list re
 through `getAt`, so the helper returns `Except StateTransitionError`. -/
 forkdef calculateCommitteeFraction (state : State) (committeePercent : CLUint64) :
     Except StateTransitionError Gwei := do
-  let validators := sszGet state validators
+  let validators := state.validators
   let active ← getActiveValidatorIndices state (currentEpochOf state)
   let unslashedAndActive ← active.filterM fun i => do
     let validator ← liftErr (getAt validators i)
@@ -201,7 +201,7 @@ the `sum` row), so each `+` binds before the branch returns. -/
 forkdef getAttestationScore (store : Store map) (root : Root) (state : State) :
     StoreTransition Gwei := do
   let active ← getActiveValidatorIndices state (currentEpochOf state)
-  let validators := sszGet state validators
+  let validators := state.validators
   active.foldlM (init := (0 : Gwei)) fun acc i => do
     let validator ← sszGetIdx validators i
     if validator.slashed then pure acc
@@ -249,7 +249,7 @@ forkdef getVotingSource (store : Store map) (blockRoot : Root) : StoreTransition
     FcMap.getOrThrow store.unrealizedJustifications blockRoot
   else
     let hs ← FcMap.getOrThrow store.blockStates blockRoot
-    pure (sszGet hs currentJustifiedCheckpoint)
+    pure hs.currentJustifiedCheckpoint
 
 /-- `get_node_children(store, node)` (`phase0/fork-choice.md:416-421`): the roots of the
 blocks whose parent is `root`. It iterates `store.blocks` and reads each entry it holds, so it
@@ -409,7 +409,7 @@ forkdef isHeadWeak (store : Store map) (headRoot : Root) : StoreTransition Bool 
   let headBlock ← FcMap.getOrThrow store.blocks headRoot
   let epoch := computeEpochAtSlot headBlock.slot
   let baseWeight ← getAttestationScore store headRoot justifiedState
-  let validators := sszGet justifiedState validators
+  let validators := justifiedState.validators
   let committeeCount ← getCommitteeCountPerSlot headState epoch
   -- `toPlainNat`: `range(get_committee_count_per_slot(...))` iterates the plain positions
   -- below the checked count, which its value names.
@@ -517,8 +517,8 @@ forkdef computePulledUpTip (blockRoot : Root) : StoreTransition Unit := do
   let store ← get
   let state ← FcMap.getOrThrow store.blockStates blockRoot
   let pulled ← runNestedStateTransition state processJustificationAndFinalization
-  let cj := sszGet pulled currentJustifiedCheckpoint
-  let fz := sszGet pulled finalizedCheckpoint
+  let cj := pulled.currentJustifiedCheckpoint
+  let fz := pulled.finalizedCheckpoint
   set { store with
     unrealizedJustifications := FcMap.insert store.unrealizedJustifications blockRoot cj }
   set (updateUnrealizedCheckpoints (← get) cj fz)
@@ -721,7 +721,7 @@ forkdef onBlock (signedBlock : SignedBeaconBlock) (columns : Array DataColumnSid
     blockStates := FcMap.insert store.blockStates blockRoot postState }
   set (← recordBlockTimeliness (← get) blockRoot)
   set (← updateProposerBoostRoot (← get) head blockRoot)
-  set (updateCheckpoints (← get) (sszGet postState currentJustifiedCheckpoint) (sszGet postState finalizedCheckpoint))
+  set (updateCheckpoints (← get) postState.currentJustifiedCheckpoint postState.finalizedCheckpoint)
   -- `(map := map)`: no store argument, so the section's map backing is undetermined here
   -- (the ambient `get`/`set` constraint alone leaves it a stuck metavariable); name it.
   computePulledUpTip (map := map) blockRoot
@@ -740,7 +740,7 @@ forkdef storeTargetCheckpointState (store : Store map) (target : Checkpoint) :
     let base ← FcMap.getOrThrow store.blockStates target.root
     let targetSlot ← computeStartSlotAtEpoch target.epoch
     let advanced ←
-      if (sszGet base slot) < targetSlot then
+      if base.slot < targetSlot then
         runNestedStateTransition base (processSlots targetSlot)
       else pure base
     pure { store with checkpointStates := FcMap.insert store.checkpointStates target advanced }
@@ -841,14 +841,14 @@ are checked. `anchor_state` comes straight off the wire, so a slot at or above
 `2^64 / SLOT_DURATION_MS` faults where a bare product would wrap and seed a wrong clock. -/
 forkdef getForkchoiceStore (anchorState : State) (anchorBlock : BeaconBlock) :
     Except StoreTransitionError (Store map) := do
-  -- `anchor_block.state_root == hash_tree_root(anchor_state)`: the boxed state hashes
-  -- through `stateRoot` (the cached-tree path), not `htr` (which wants a bare `SSZRepr`).
-  assert (anchorBlock.stateRoot == bytesToRoot (stateRoot anchorState).1)
+  -- `anchor_block.state_root == hash_tree_root(anchor_state)`: the anchor state is a value,
+  -- so `htr` roots it, a full merkleization of the plain record.
+  assert (anchorBlock.stateRoot == htr anchorState)
   let anchorRoot := htr anchorBlock
   let epoch := currentEpochOf anchorState
   let cp : Checkpoint := { epoch := epoch, root := anchorRoot }
-  let genesisTimeMs := secondsToMilliseconds (sszGet anchorState genesisTime)
-  let timeMs ← computeTimeAtSlotMs genesisTimeMs (sszGet anchorState slot)
+  let genesisTimeMs := secondsToMilliseconds anchorState.genesisTime
+  let timeMs ← computeTimeAtSlotMs genesisTimeMs anchorState.slot
   pure
     { timeMs := timeMs
       genesisTimeMs := genesisTimeMs

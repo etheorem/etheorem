@@ -51,12 +51,12 @@ namespace EthCLSpecs.Proofs.Heze
 
 open EthCLLib.Proofs (ForkChoiceStoreRun run_bind run_pure run_throw except_bind_ok
   except_bind_error hadd_un_eq)
-open EthCLLib.Spec (HasherTag MapKind FcMap CLUint64 StoreTransitionError SpecReject)
+open EthCLLib.Spec (MapKind FcMap CLUint64 StoreTransitionError SpecReject)
 open EthCLSpecs.Heze (Preset Config Store shouldExtendPayload isPayloadInclusionListSatisfied
   isPayloadVerified getCurrentSlot payloadTimeliness payloadDataAvailability isParentNodeFull
   fcZeroRoot Root Slot BeaconBlock)
 
-variable {map : MapKind} [Preset] [HasherTag] [Config] [FcMap map]
+variable {map : MapKind} [Preset] [Config] [FcMap map]
 
 /-! ## Complete `.run` equation -/
 
@@ -193,7 +193,7 @@ are the prefix every post-prefix corollary shares. One bridge reduces that
 prefix once, and each corollary states only its own case.
 -/
 
-omit [Preset] [HasherTag] [Config] in
+omit [Preset] [Config] in
 /-- A block one slot before `currentSlot` passes the checked add's range test: the sum
 equals a value already below `2^64`. -/
 private theorem next_slot_lt {a c : Slot} (h : a.toPlainNat + 1 = c.toPlainNat) :
@@ -201,7 +201,7 @@ private theorem next_slot_lt {a c : Slot} (h : a.toPlainNat + 1 = c.toPlainNat) 
   rw [h]
   exact UInt64.toNat_lt_size c.val
 
-omit [Preset] [HasherTag] [Config] in
+omit [Preset] [Config] in
 /-- The checked add's value is then `currentSlot`, so the slot assertion holds. -/
 private theorem next_slot_beq {a c : Slot} (h : a.toPlainNat + 1 = c.toPlainNat) :
     (CLUint64.ofNatLT _ (next_slot_lt h) == c) = true := by

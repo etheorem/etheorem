@@ -45,7 +45,7 @@ pyspec rejects. Two callers can hold one. `pcLoop` passes a `target_index` read 
 when the two lengths disagree. -/
 forkdef increaseBalance (state : State) (i : ValidatorIndex) (delta : Gwei) :
     StateTransition State := do
-  let balance ← sszGetIdx (sszGet state balances) i
+  let balance ← sszGetIdx state.balances i
   let sum ← balance + delta
   return modBalance state i (fun _ => sum)
 
@@ -56,7 +56,7 @@ so the subtraction raises nothing. The read goes through `sszGetIdx` for the rea
 read raises `IndexError` past the end. -/
 forkdef decreaseBalance (state : State) (i : ValidatorIndex) (delta : Gwei) :
     StateTransition State := do
-  let balance ← sszGetIdx (sszGet state balances) i
+  let balance ← sszGetIdx state.balances i
   return modBalance state i (fun _ => balance.saturatingSub delta)
 
 /-- `get_total_balance` (floored at one increment). The pyspec's `sum` over the
@@ -68,7 +68,7 @@ read precedes the first add. Each read raises `IndexError` past the end of the r
 and the body reads through `getAt` in the same order. -/
 forkdef getTotalBalance (state : State) (indices : Array ValidatorIndex) :
     Except StateTransitionError Gwei := do
-  let validators := sszGet state validators
+  let validators := state.validators
   let balances ← indices.mapM fun i => do
     let validator ← liftErr (getAt validators i)
     pure validator.effectiveBalance
