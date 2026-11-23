@@ -24,7 +24,8 @@ pin pair: two nearby inputs that land on its two sides.
 Gloas and Heze inherit both bodies. The Gloas pin shows that the inherited body
 carries the fix. The fixture states sit at slot `800` (epoch `100`). At the minimal
 preset `compute_activation_exit_epoch(100) = 100 + 1 + MAX_SEED_LOOKAHEAD = 105`.
-`State` is FFI-backed, so `native_decide`.
+The pins hash through the FFI `Sha256` (`fastHasherTag`). The Fulu state is an FFI-backed
+box, and the Gloas state is the plain record. So `native_decide`.
 -/
 
 set_option autoImplicit false
@@ -196,14 +197,13 @@ open EthCLSpecs.Gloas
 /-- The Gloas registry-update fixture: validator `v` with a `32 ETH` balance, at slot
 `800`, with the finalized checkpoint at `finalized`. -/
 private def gloasRegistryState (v : @Validator minimal) (finalized : Nat) :
-    SSZ.Box Sha256 (@EthCLSpecs.Gloas.BeaconState minimal) :=
+    @EthCLSpecs.Gloas.BeaconState minimal :=
   letI : Preset := minimal
-  SSZ.FastBox
-    { (default : @EthCLSpecs.Gloas.BeaconState minimal) with
-      slot := 800
-      finalizedCheckpoint := { (default : @Checkpoint minimal) with epoch := u64 finalized }
-      validators := ⟨#[v]⟩
-      balances := ⟨#[32000000000]⟩ }
+  { (default : @EthCLSpecs.Gloas.BeaconState minimal) with
+    slot := 800
+    finalizedCheckpoint := { (default : @Checkpoint minimal) with epoch := u64 finalized }
+    validators := ⟨#[v]⟩
+    balances := ⟨#[32000000000]⟩ }
 
 /-- A Gloas queue-eligible `32 ETH` validator, `activation_epoch = FAR_FUTURE_EPOCH`. -/
 private def gloasQueueEligible : @Validator minimal :=
@@ -218,16 +218,16 @@ private def gloasQueueEligible : @Validator minimal :=
 
 /-- Runs Gloas `process_registry_updates` and reads back validator `0`'s
 `(activation_eligibility_epoch, activation_epoch)`. -/
-private def gloasRegistryRun (st : SSZ.Box Sha256 (@EthCLSpecs.Gloas.BeaconState minimal)) :
+private def gloasRegistryRun (st : @EthCLSpecs.Gloas.BeaconState minimal) :
     Option (Nat × Nat) :=
   letI : Preset := minimal
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (processRegistryUpdates : EStateM StateTransitionError
-      (SSZ.Box Sha256 (@EthCLSpecs.Gloas.BeaconState minimal)) Unit).run st with
+      (@EthCLSpecs.Gloas.BeaconState minimal) Unit).run st with
   | .ok _ post =>
-    let v := (SSZ.Box.view post).validators.toArray[0]!
+    let v := post.validators.toArray[0]!
     some (v.activationEligibilityEpoch.toPlainNat, v.activationEpoch.toPlainNat)
   | .error _ _ => none
 

@@ -235,14 +235,13 @@ private def gloasAuditState : @State minimal fastHasherTag :=
       effectiveBalance := 32000000000
       exitEpoch := Const.farFutureEpoch
       withdrawableEpoch := Const.farFutureEpoch }
-  SSZ.FastBox
-    { (default : @BeaconState minimal) with
-      slot := 16
-      validators := ⟨#[v]⟩
-      balances := ⟨#[32000000000]⟩
-      previousEpochParticipation := ⟨#[0]⟩
-      currentEpochParticipation := ⟨#[0]⟩
-      inactivityScores := ⟨#[100]⟩ }
+  { (default : @BeaconState minimal) with
+    slot := 16
+    validators := ⟨#[v]⟩
+    balances := ⟨#[32000000000]⟩
+    previousEpochParticipation := ⟨#[0]⟩
+    currentEpochParticipation := ⟨#[0]⟩
+    inactivityScores := ⟨#[100]⟩ }
 
 /-- Gloas `compute_proposer_score` under configuration `c`. -/
 private def gloasProposerScore (c : Config) : Outcome :=
@@ -349,14 +348,13 @@ private def gloasEdgeState : @State minimal fastHasherTag :=
       effectiveBalance := 9223372036854775807
       exitEpoch := Const.farFutureEpoch
       withdrawableEpoch := Const.farFutureEpoch }
-  SSZ.FastBox
-    { (default : @BeaconState minimal) with
-      slot := 16
-      validators := ⟨#[v, v]⟩
-      balances := ⟨#[9223372036854775807, 9223372036854775807]⟩
-      previousEpochParticipation := ⟨#[0, 0]⟩
-      currentEpochParticipation := ⟨#[0, 0]⟩
-      inactivityScores := ⟨#[100, 100]⟩ }
+  { (default : @BeaconState minimal) with
+    slot := 16
+    validators := ⟨#[v, v]⟩
+    balances := ⟨#[9223372036854775807, 9223372036854775807]⟩
+    previousEpochParticipation := ⟨#[0, 0]⟩
+    currentEpochParticipation := ⟨#[0, 0]⟩
+    inactivityScores := ⟨#[100, 100]⟩ }
 
 /-- The quorum at the total-active-balance edge: the product stays in range, so the
 threshold answers rather than raising. -/
