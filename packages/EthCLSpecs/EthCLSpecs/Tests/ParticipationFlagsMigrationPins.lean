@@ -38,8 +38,9 @@ it fails under. The pinned pyspec gives the same class or value at every pin
 
 The signature gate is forced off (`CryptoBackend.verifyOff`, the `bls_setting:
 2` seam): the pins drive the flag walk, which the fabricated zero-signature
-attestations never reach otherwise. `State` is FFI-backed, so `native_decide`
-on the harness pins.
+attestations never reach otherwise. The pins hash through the FFI `Sha256`
+(`fastHasherTag`). The Fulu state is an FFI-backed box, and the Gloas state is the plain
+record. So `native_decide` on the harness pins.
 -/
 
 set_option autoImplicit false
@@ -217,18 +218,17 @@ open EthCLSpecs.Gloas
 /-- A Gloas state at slot `s` with eight active validators; `part = none`
 leaves the participation lists empty, `some a` fills the current-epoch list. -/
 private def gAttState (P : Preset) (s : Slot) (part : Option (Array ParticipationFlags)) :
-    SSZ.Box Sha256 (@EthCLSpecs.Gloas.BeaconState P) :=
+    @EthCLSpecs.Gloas.BeaconState P :=
   letI : Preset := P
   let v : Validator :=
     { (default : Validator) with
       effectiveBalance := 32000000000,
       exitEpoch := Const.farFutureEpoch, withdrawableEpoch := Const.farFutureEpoch }
-  SSZ.FastBox
-    { (default : @EthCLSpecs.Gloas.BeaconState P) with
-      slot := s
-      validators := ⟨Array.replicate 8 v⟩
-      balances := ⟨Array.replicate 8 32000000000⟩
-      currentEpochParticipation := ⟨part.getD #[]⟩ }
+  { (default : @EthCLSpecs.Gloas.BeaconState P) with
+    slot := s
+    validators := ⟨Array.replicate 8 v⟩
+    balances := ⟨Array.replicate 8 32000000000⟩
+    currentEpochParticipation := ⟨part.getD #[]⟩ }
 
 /-- The Gloas twin of `noTargetAtt`. Gloas `aggregation_bits` is an uncapped
 `ProgressiveBitlist` (EIP-7688). -/
@@ -243,20 +243,20 @@ private def gNoTargetAtt (P : Preset) (slot : Slot) (targetEpoch : Epoch) : @Att
     committeeBits := bitSet default 0 true }
 
 /-- Runs Gloas `process_attestation` with `parent_slot = 0` from an explicit state. -/
-private def gAttRunFrom (P : Preset) (st : SSZ.Box Sha256 (@EthCLSpecs.Gloas.BeaconState P))
+private def gAttRunFrom (P : Preset) (st : @EthCLSpecs.Gloas.BeaconState P)
     (att : @Attestation P) :
-    EStateM.Result StateTransitionError (SSZ.Box Sha256 (@EthCLSpecs.Gloas.BeaconState P)) Unit :=
+    EStateM.Result StateTransitionError (@EthCLSpecs.Gloas.BeaconState P) Unit :=
   letI : Preset := P
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.verifyOff
   (processAttestation att 0 : EStateM StateTransitionError
-    (SSZ.Box Sha256 (@EthCLSpecs.Gloas.BeaconState P)) Unit).run st
+    (@EthCLSpecs.Gloas.BeaconState P) Unit).run st
 
 /-- Runs Gloas `process_attestation` over the fixture state. -/
 private def gAttRun (P : Preset) (s : Slot) (part : Option (Array ParticipationFlags))
     (att : @Attestation P) :
-    EStateM.Result StateTransitionError (SSZ.Box Sha256 (@EthCLSpecs.Gloas.BeaconState P)) Unit :=
+    EStateM.Result StateTransitionError (@EthCLSpecs.Gloas.BeaconState P) Unit :=
   gAttRunFrom P (gAttState P s part) att
 
 /-! ### 3. The short-circuit placement (Gloas) -/
