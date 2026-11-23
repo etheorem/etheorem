@@ -14,32 +14,33 @@ import EthCLSpecs.Proofs.Fulu.Run
 to statements of known answers, so a check that rots to "always pass" fails
 this module instead of passing quietly:
 
-* `bindsState` quantifies over the boxed `State` and draws one finding.
+* `bindsState` quantifies over the box and draws one finding.
 * `bindsPlain` binds `BeaconState` and passes.
 * `lambdaInProgram` states a spec write inline in the `modifyState` shape, whose
   lambda over the state is program text, and passes.
-* `nestedForall` hides a `∀ s : State` inside a hypothesis and draws one
+* `nestedForall` hides a `∀ s : BoxedState` inside a hypothesis and draws one
   finding.
-* `predicateParam` takes a predicate over `State` as a parameter; the walk
+* `predicateParam` takes a predicate over the box as a parameter; the walk
   never enters its domain, so it passes.
-* `predicateBody` takes a predicate parameter and quantifies over `State` with
+* `predicateBody` takes a predicate parameter and quantifies over the box with
   a bound variable at the body's head; proposition position carries the walk
   through, so `s` draws one finding.
-* `functionEquation` states an equation between functions over `State`, so the
+* `functionEquation` states an equation between functions over the box, so the
   equation's type argument is a function type in a value position; the walk
   reads value arguments as program values, so it passes.
 * `curriedEquation` states an equation between curried functions over
-  `State`; the inner arrow of a function type in a value position stays a
+  the box; the inner arrow of a function type in a value position stays a
   value, so it passes.
-* `connectiveNested` puts a `∀ s : State` under `True ∧ _`; a connective's
+* `connectiveNested` puts a `∀ s : BoxedState` under `True ∧ _`; a connective's
   arguments stay in proposition position, so `s` draws one finding.
 
-The fixtures name Fulu constants, because Fulu is the fork whose `State` is still
-the box. Each fixture names a fork constant, so each is in scope: a failing fixture that
-is out of scope would pass for the wrong reason. Four more fixtures pin the
-remaining edges. A `Store` binder holds a `State` inside a field type, and the
-head is `Store`, so it passes. A function-typed parameter over `State` is a
-domain, not a quantified claim, so it passes. `markedBindsBox` is marked and
+No fork `State` is the box any more, so the fixtures spell the box out:
+`BoxedState` is local notation for `SSZ.Box HasherTag.H BeaconState` over the Fulu
+`BeaconState`. Notation expands in place, so each statement names the Fulu constant
+and is in scope: a failing fixture that is out of scope would pass for the wrong
+reason. Four more fixtures pin the remaining edges. A `Store` binder has the head
+`Store`, so it passes. A function-typed parameter over the box is a domain, not a
+quantified claim, so it passes. `markedBindsBox` is marked and
 binds the box, so it is accepted, and `markedBindsNone` fails as stale.
 `outOfScopeMarker` is marked but names no fork constant, so the check never
 applies to it and the marker is stale.
@@ -62,19 +63,25 @@ namespace EthCLSpecs.Tests.BoxBinderPins
 
 open EthCLLib.Spec (MapKind FcMap HasherTag)
 open EthCLLib.Internal (boxQuantifiers boxCheckScopes namesFork boxGenerics)
-open EthCLSpecs.Fulu (Preset State BeaconState Store modifyState)
+open EthCLSpecs.Fulu (Preset BeaconState Store modifyState)
 open EthCLSpecs.Proofs.Fulu (FuluRun)
 
 section Fixtures
+
+/-- The boxed Fulu state, spelled out. A `notation` and not an `abbrev`: the
+expansion puts `BeaconState` in the statement itself, which is what puts a
+fixture in the check's scope (`namesFork` reads the statement's constants). -/
+local notation "BoxedState" =>
+  SizzLean.Cache.SSZ.Box EthCLLib.Spec.HasherTag.H BeaconState
 
 -- Each fixture binds variables its body never reads: the walk looks at the
 -- binder shapes only, so the bodies stay `True` or `rfl`. The unused-variable
 -- linter would flag every one of them, so it is off for this section alone.
 set_option linter.unusedVariables false
 
-/-- In scope, and binds the boxed `State`: one finding. -/
+/-- In scope, and binds the box: one finding. -/
 theorem bindsState [Preset] [HasherTag] :
-    ∀ (state : State), True := fun _ => trivial
+    ∀ (state : BoxedState), True := fun _ => trivial
 
 /-- In scope, and binds the plain value: no finding. -/
 theorem bindsPlain [Preset] [HasherTag] :
@@ -82,7 +89,7 @@ theorem bindsPlain [Preset] [HasherTag] :
 
 /-- In scope. The statement carries the spec's own write, the `modifyState`
 lambda over the state with an `sszUpdate` expansion inside. The monad is pinned
-by ascription, because `state_preamble` emits `modifyState` with hygiene-mangled
+by ascription, because the preamble emits `modifyState` with hygiene-mangled
 binder names, so a named argument cannot reach the monad parameter. The lambda
 is program text inside an equation, so the walk reports nothing. -/
 theorem lambdaInProgram [Preset] [HasherTag] :
@@ -95,56 +102,56 @@ theorem lambdaInProgram [Preset] [HasherTag] :
             sszGet state balances) : FuluRun PUnit) → True :=
   fun _ _ => trivial
 
-/-- In scope. The boxed `State` quantifier sits inside a hypothesis, one
+/-- In scope. The box quantifier sits inside a hypothesis, one
 `forallE` below the theorem's own binder: still one finding. -/
 theorem nestedForall [Preset] [HasherTag] :
-    ∀ (state : BeaconState), (∀ (s : State), True) → True := fun _ _ => trivial
+    ∀ (state : BeaconState), (∀ (s : BoxedState), True) → True := fun _ _ => trivial
 
-/-- In scope. A `Store` binder holds a `State` inside a field type; the walk
-reads the head only, and the head is `Store`. No finding. -/
+/-- In scope. A `Store` binder: the walk reads the head only, and the head is
+`Store`. No finding. -/
 theorem storeBinder {map : MapKind} [Preset] [HasherTag] [FcMap map] :
     ∀ (store : Store map), True := fun _ => trivial
 
 /-- In scope. A function over boxes is a program, not a quantified claim: the
 parameter's type head is an arrow, and the walk never enters it. No finding. -/
 theorem functionBinder [Preset] [HasherTag] :
-    ∀ (f : State → State), True := fun _ => trivial
+    ∀ (f : BoxedState → BoxedState), True := fun _ => trivial
 
 /-- In scope. A predicate over the state is a parameter, not a quantified
 claim: the walk enters no function domain, whatever its result sort. No
 finding. -/
 theorem predicateParam [Preset] [HasherTag] :
-    ∀ (P : State → Prop), True := fun _ => trivial
+    ∀ (P : BoxedState → Prop), True := fun _ => trivial
 
 /-- In scope. The body of the `s` quantifier has a bound variable at its head,
 so no inference can see a proposition there. Proposition position is tracked
 structurally, so `s` still draws one finding. -/
 theorem predicateBody [Preset] [HasherTag] :
-    ∀ (P : State → Prop) (s : State), P s → True := fun _ _ _ => trivial
+    ∀ (P : BoxedState → Prop) (s : BoxedState), P s → True := fun _ _ _ => trivial
 
-/-- In scope. The equation's type argument is a function type over `State`, in
+/-- In scope. The equation's type argument is a function type over the box, in
 a value position: an equation is no logical connective, so the walk reads its
 arguments as program values and never enters the function type's domain. No
 finding. -/
 theorem functionEquation [Preset] [HasherTag] :
-    ∀ (f : State → State), f = f := fun _ => rfl
+    ∀ (f : BoxedState → BoxedState), f = f := fun _ => rfl
 
 /-- In scope. The equation's type argument is a curried function type over
-`State`, in a value position. A `forallE` body keeps the position its binder was
+the box, in a value position. A `forallE` body keeps the position its binder was
 reached in, so the inner arrow is a value too. No finding. -/
 theorem curriedEquation [Preset] [HasherTag] :
-    ∀ (f : State → State → State), f = f := fun _ => rfl
+    ∀ (f : BoxedState → BoxedState → BoxedState), f = f := fun _ => rfl
 
 /-- In scope. A connective's arguments stay in proposition position, so the
-`∀ s : State` under the conjunction draws one finding, `s`. -/
+`∀ s : BoxedState` under the conjunction draws one finding, `s`. -/
 theorem connectiveNested [Preset] [HasherTag] :
-    ∀ (state : BeaconState), True ∧ ∀ (s : State), True :=
+    ∀ (state : BeaconState), True ∧ ∀ (s : BoxedState), True :=
   fun _ => ⟨trivial, fun _ => trivial⟩
 
 /-- The marker on a theorem that binds the box: the check accepts it. -/
 @[box_generic "a box-level flavour fact; the seed of a cached ≡ pure equivalence"]
 theorem markedBindsBox [Preset] [HasherTag] :
-    ∀ (state : State), True := fun _ => trivial
+    ∀ (state : BoxedState), True := fun _ => trivial
 
 /-- The marker on a theorem that binds no box: the check fails it as stale. -/
 @[box_generic "stale on purpose: this fixture must draw the stale-marker finding"]

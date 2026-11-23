@@ -246,9 +246,9 @@ private def runBlocksImpl (P : Preset) (C : Config) (preBytes : ByteArray)
 -- fork-epoch boundary (so the boundary `process_epoch` runs under Fulu rules), apply
 -- `upgradeToGloas` + `completeUpgradeToGloas`, then fold the post-fork blocks under Gloas
 -- `state_transition`. A post-fork block landing exactly on the boundary slot skips the
--- slot advance (the upgrade already positioned the state there). The Fulu leg runs on the
--- boxed Fulu `State`, and `upgradeToGloas` reads its view; the Gloas leg runs on the plain
--- Gloas `State`, which the upgrade returns as is. Build-cost note as `runOperationImpl` above.
+-- slot advance (the upgrade already positioned the state there). Both legs run on the plain
+-- record: the Fulu leg threads the decoded Fulu state, and the Gloas leg threads the state
+-- that `upgradeToGloas` returns. Build-cost note as `runOperationImpl` above.
 set_option maxHeartbeats 1000000 in
 private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
     (preBytes : ByteArray) (blocks : Array ByteArray) (cmeta : CaseMeta) :
@@ -289,14 +289,13 @@ private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
       match SSZ.deserialize (T := @Gloas.SignedBeaconBlock P) bb with
       | .ok sb   => Except.ok sb
       | .error _ => Except.error (RunError.decode "Gloas SignedBeaconBlock"))
-    let fuluBox0 : SSZ.Box Sha256 (Fulu.BeaconState) := SSZ.FastBox preFulu
-    let fuluAction : EStateM StateTransitionError (SSZ.Box Sha256 (Fulu.BeaconState)) Unit := do
+    let fuluAction : EStateM StateTransitionError (Fulu.BeaconState) Unit := do
       for sb in fuluBlocks do Fulu.stateTransition sb
       if (sszGet (← get) slot) < boundary then Fulu.processSlots boundary
-    match fuluAction.run fuluBox0 with
+    match fuluAction.run preFulu with
     | .error e _ => Except.error (RunError.spec e)
     | .ok _ fuluSt =>
-      let gloasPost : @Gloas.BeaconState P := upgradeToGloas forkVersion fuluSt.view
+      let gloasPost : @Gloas.BeaconState P := upgradeToGloas forkVersion fuluSt
       let gloasAction : EStateM StateTransitionError (@Gloas.BeaconState P) Unit := do
         completeUpgradeToGloas
         for sb in gloasBlocks do
