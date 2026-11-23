@@ -1,9 +1,6 @@
+import EthCLSpecs.Proofs.Fulu.Balances
 import EthCLSpecs.Proofs.Fulu.Codec
 import EthCLSpecs.Proofs.Fulu.Run
--- Detached while Fulu runs on the plain `State` (WS-126 task 5.1).
--- `Balances` states its runs through the box vocabulary (`pureState`, `runPure`), so it
--- fails on the plain state. Task 5.3 restates it on plain runs and reattaches it.
--- import EthCLSpecs.Proofs.Fulu.Balances
 
 /-!
 # `EthCLSpecs.Proofs.Fulu`: the Fulu fork's theorems (index)
