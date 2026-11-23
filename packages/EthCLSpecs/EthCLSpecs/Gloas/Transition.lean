@@ -33,12 +33,13 @@ indices are the checked slots reduced by the proved-total divisor view
 (`SPEC_ARITHMETIC.md` §4.2); `toPlainNat` names the structural vector index the result
 narrows to (§4.5). The availability clear runs as its own step, after the caching, because
 its index needs the pyspec's checked `state.slot + 1`, which binds in the transition monad
-(the `Id.run` caching body is pure); no raise can land between the two writes. -/
+(the `Id.run` caching body is pure); no raise can land between the two writes. The state
+root comes from `getStateRoot`, the one seam for the root of the threaded state, before the
+caching body runs. -/
 forkdef processSlot : StateTransition Unit := do
+  let prevStateRoot : Root := bytesToRoot (← getStateRoot)
   modifyState fun state => Id.run do
-    let (prevStateRootBytes, state) := stateRoot state
     let mut state := state
-    let prevStateRoot : Root := bytesToRoot prevStateRootBytes
     let idx := ((sszGet state slot) % Const.slotsPerHistoricalRootDiv).toPlainNat
 
     -- Cache the previous state root, backfill it into the latest header, then cache that

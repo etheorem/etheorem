@@ -29,7 +29,7 @@ pre-migration body, which the pin's own comment names.
    is the mixed `&` with the plain `~BUILDER_INDEX_FLAG` and cannot raise, so these are value
    pins with no failure case.
 
-`State` is FFI-backed, so `native_decide`.
+The pins hash through the FFI `Sha256` (`fastHasherTag`), so `native_decide`.
 -/
 
 set_option autoImplicit false
@@ -51,19 +51,17 @@ open EthCLSpecs.Fulu
 
 /-- A Fulu state at slot `8` with one fully withdrawable validator (an `0x01` credential,
 withdrawable at epoch `0`, balance `32 ETH`) and the given `next_withdrawal_index`. -/
-private def withdrawableState (nextIndex : WithdrawalIndex) : @State minimal fastHasherTag :=
+private def withdrawableState (nextIndex : WithdrawalIndex) : @State minimal :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let v : Validator :=
     { (default : Validator) with
       withdrawalCredentials := Vector.ofFn (fun i => if i.val = 0 then 1 else 0)
       effectiveBalance := 32000000000, exitEpoch := 0, withdrawableEpoch := 0 }
-  SSZ.FastBox
-    { (default : @BeaconState minimal) with
-      slot := 8
-      validators := ⟨#[v], by decide⟩
-      balances := ⟨#[32000000000], by decide⟩
-      nextWithdrawalIndex := nextIndex }
+  { (default : @BeaconState minimal) with
+    slot := 8
+    validators := ⟨#[v], by decide⟩
+    balances := ⟨#[32000000000], by decide⟩
+    nextWithdrawalIndex := nextIndex }
 
 /-- Runs Fulu `get_expected_withdrawals` and reads back each withdrawal's index, validator
 index, and amount. -/
@@ -71,7 +69,6 @@ private def fuluExpected (nextIndex : WithdrawalIndex) :
     Except StateTransitionError (List (Nat × Nat × Nat)) :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   let st := withdrawableState nextIndex
   match (getExpectedWithdrawals st : EStateM StateTransitionError State _).run st with
@@ -142,18 +139,16 @@ example : pinComputeCommitteeSliceReads = true := by native_decide
 
 /-- A Fulu state at slot `s` with eight active validators. At the minimal preset each slot
 has one committee of one member. -/
-private def activeState (s : Slot) : @State minimal fastHasherTag :=
+private def activeState (s : Slot) : @State minimal :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let v : Validator :=
     { (default : Validator) with
       effectiveBalance := 32000000000,
       exitEpoch := Const.farFutureEpoch, withdrawableEpoch := Const.farFutureEpoch }
-  SSZ.FastBox
-    { (default : @BeaconState minimal) with
-      slot := s
-      validators := ⟨Array.replicate 8 v, by decide⟩
-      balances := ⟨Array.replicate 8 32000000000, by decide⟩ }
+  { (default : @BeaconState minimal) with
+    slot := s
+    validators := ⟨Array.replicate 8 v, by decide⟩
+    balances := ⟨Array.replicate 8 32000000000, by decide⟩ }
 
 /-- Slot `1`, committee index `UINT64_MAX`: `Uint64(1 % 8) * 1 + index` raises at the
 checked add. The old `Nat` sum never raised. -/
@@ -190,7 +185,7 @@ private def fuluAtt (bits : Array Bool) (h : bits.size ≤ 4 := by decide) : @At
 
 /-- Runs Fulu `process_attestation` at state slot `9`. -/
 private def fuluRun (att : @Attestation minimal) :
-    EStateM.Result StateTransitionError (@State minimal fastHasherTag) Unit :=
+    EStateM.Result StateTransitionError (@State minimal) Unit :=
   letI : Preset := minimal
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
@@ -222,13 +217,11 @@ open EthCLSpecs.Gloas
 /-! ### 1. `withdrawal_index += 1` (Gloas) -/
 
 /-- A Gloas state with one pending builder withdrawal of `7` Gwei for builder `3`. -/
-private def builderPendingState : @State minimal fastHasherTag :=
+private def builderPendingState : @State minimal :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
-  SSZ.FastBox
-    { (default : @BeaconState minimal) with
-      builderPendingWithdrawals := ⟨#[{ (default : BuilderPendingWithdrawal) with
-        amount := 7, builderIndex := 3 }]⟩ }
+  { (default : @BeaconState minimal) with
+    builderPendingWithdrawals := ⟨#[{ (default : BuilderPendingWithdrawal) with
+      amount := 7, builderIndex := 3 }]⟩ }
 
 /-- Runs Gloas `get_builder_withdrawals` from `withdrawalIndex` with no prior withdrawals,
 reading back the withdrawals, the next index, and the processed count. -/
@@ -236,7 +229,6 @@ private def gloasBuilderWs (withdrawalIndex : WithdrawalIndex) :
     Except StateTransitionError (List (Nat × Nat × Nat) × Nat × Nat) :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (getBuilderWithdrawals withdrawalIndex #[] : EStateM StateTransitionError State _).run
       builderPendingState with
@@ -264,23 +256,21 @@ example : pinGloasBuilderWithdrawalIndexBelowMaxReads = true := by native_decide
 /-! ### 4. The aggregation-bit reads (Gloas) -/
 
 /-- A Gloas state at slot `s` with eight active validators. -/
-private def gloasActiveState (s : Slot) : @State minimal fastHasherTag :=
+private def gloasActiveState (s : Slot) : @State minimal :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let v : Validator :=
     { (default : Validator) with
       effectiveBalance := 32000000000,
       exitEpoch := Const.farFutureEpoch, withdrawableEpoch := Const.farFutureEpoch }
-  SSZ.FastBox
-    { (default : @BeaconState minimal) with
-      slot := s
-      validators := ⟨Array.replicate 8 v⟩
-      balances := ⟨Array.replicate 8 32000000000⟩ }
+  { (default : @BeaconState minimal) with
+    slot := s
+    validators := ⟨Array.replicate 8 v⟩
+    balances := ⟨Array.replicate 8 32000000000⟩ }
 
 /-- Runs Gloas `process_attestation` at state slot `9` with `parent_slot = 0`, for an
 attestation at slot `8`, target epoch `1`, committee `0`, with the given aggregation bits. -/
 private def gloasAttRun (bits : Array Bool) :
-    EStateM.Result StateTransitionError (@State minimal fastHasherTag) Unit :=
+    EStateM.Result StateTransitionError (@State minimal) Unit :=
   letI : Preset := minimal
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
@@ -312,16 +302,15 @@ example : pinGloasFalseBitRejectsAssert = true := by native_decide
 /-- Runs Gloas `process_execution_payload_bid` at state slot `1` over `n` default builders,
 for a bid at slot `1` naming `builderIndex`. -/
 private def bidRun (n : Nat) (builderIndex : BuilderIndex) :
-    EStateM.Result StateTransitionError (@State minimal fastHasherTag) Unit :=
+    EStateM.Result StateTransitionError (@State minimal) Unit :=
   letI : Preset := minimal
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   let st : State :=
-    SSZ.FastBox
-      { (default : @BeaconState minimal) with
-        slot := 1
-        builders := ⟨Array.replicate n default⟩ }
+    { (default : @BeaconState minimal) with
+      slot := 1
+      builders := ⟨Array.replicate n default⟩ }
   let bid : SignedExecutionPayloadBid :=
     { (default : SignedExecutionPayloadBid) with
       message := { (default : ExecutionPayloadBid) with builderIndex, slot := 1 } }

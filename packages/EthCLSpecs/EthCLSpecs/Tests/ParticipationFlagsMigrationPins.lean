@@ -38,8 +38,8 @@ it fails under. The pinned pyspec gives the same class or value at every pin
 
 The signature gate is forced off (`CryptoBackend.verifyOff`, the `bls_setting:
 2` seam): the pins drive the flag walk, which the fabricated zero-signature
-attestations never reach otherwise. `State` is FFI-backed, so `native_decide`
-on the harness pins.
+attestations never reach otherwise. The pins hash through the FFI `Sha256`
+(`fastHasherTag`), so `native_decide` on the harness pins.
 -/
 
 set_option autoImplicit false
@@ -90,18 +90,17 @@ private def capped {α : Type} {cap : Nat} (a : Array α) : { xs : Array α // x
 the participation lists empty (the default), `some a` fills the current-epoch
 list. -/
 private def attState (P : Preset) (s : Slot) (part : Option (Array ParticipationFlags)) :
-    SSZ.Box Sha256 (@EthCLSpecs.Fulu.BeaconState P) :=
+    @EthCLSpecs.Fulu.BeaconState P :=
   letI : Preset := P
   let v : Validator :=
     { (default : Validator) with
       effectiveBalance := 32000000000,
       exitEpoch := Const.farFutureEpoch, withdrawableEpoch := Const.farFutureEpoch }
-  SSZ.FastBox
-    { (default : @EthCLSpecs.Fulu.BeaconState P) with
-      slot := s
-      validators := capped (Array.replicate 8 v)
-      balances := capped (Array.replicate 8 32000000000)
-      currentEpochParticipation := capped (part.getD #[]) }
+  { (default : @EthCLSpecs.Fulu.BeaconState P) with
+    slot := s
+    validators := capped (Array.replicate 8 v)
+    balances := capped (Array.replicate 8 32000000000)
+    currentEpochParticipation := capped (part.getD #[]) }
 
 /-- An attestation at `slot` for `targetEpoch` whose target root mismatches the
 state's zero block roots, so `is_matching_target` (and with it
@@ -119,20 +118,20 @@ private def noTargetAtt (P : Preset) (slot : Slot) (targetEpoch : Epoch) : @Atte
     committeeBits := bitSet default 0 true }
 
 /-- Runs Fulu `process_attestation` from an explicit state. -/
-private def attRunFrom (P : Preset) (st : SSZ.Box Sha256 (@EthCLSpecs.Fulu.BeaconState P))
+private def attRunFrom (P : Preset) (st : @EthCLSpecs.Fulu.BeaconState P)
     (att : @Attestation P) :
-    EStateM.Result StateTransitionError (SSZ.Box Sha256 (@EthCLSpecs.Fulu.BeaconState P)) Unit :=
+    EStateM.Result StateTransitionError (@EthCLSpecs.Fulu.BeaconState P) Unit :=
   letI : Preset := P
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.verifyOff
   (processAttestation att : EStateM StateTransitionError
-    (SSZ.Box Sha256 (@EthCLSpecs.Fulu.BeaconState P)) Unit).run st
+    (@EthCLSpecs.Fulu.BeaconState P) Unit).run st
 
 /-- Runs Fulu `process_attestation` over the fixture state. -/
 private def attRun (P : Preset) (s : Slot) (part : Option (Array ParticipationFlags))
     (att : @Attestation P) :
-    EStateM.Result StateTransitionError (SSZ.Box Sha256 (@EthCLSpecs.Fulu.BeaconState P)) Unit :=
+    EStateM.Result StateTransitionError (@EthCLSpecs.Fulu.BeaconState P) Unit :=
   attRunFrom P (attState P s part) att
 
 /-! ### 1. The mask boundary on the accessor -/
@@ -141,7 +140,6 @@ private def attRun (P : Preset) (s : Slot) (part : Option (Array ParticipationFl
 flag byte is `0x80`, bit 7 is set, all eight participate. -/
 private def pinFlag7Participates : Bool :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   match getUnslashedParticipatingIndices (attState minimal 20 (some (Array.replicate 8 0x80)))
       7 2 with
   | .ok idx => idx.size == 8
@@ -154,7 +152,6 @@ the typed range fault (the pin's `256 is out of range for ParticipationFlags
 answered `false` without raising. -/
 private def pinFlag8Raises : Bool :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   match getUnslashedParticipatingIndices (attState minimal 20 (some (Array.replicate 8 0x80)))
       8 2 with
   | .error (.arithmetic _) => true
@@ -191,7 +188,6 @@ gate skips both, so the participation list and the balances are unchanged. A
 dropped gate re-accrues the reward, which the balance read-back catches. -/
 private def pinFuluSecondRunChangesNothing : Bool :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let att := noTargetAtt minimal 17 2
   match attRun minimal 19 (some (Array.replicate 8 0)) att with
   | .error _ _ => false
@@ -217,18 +213,17 @@ open EthCLSpecs.Gloas
 /-- A Gloas state at slot `s` with eight active validators; `part = none`
 leaves the participation lists empty, `some a` fills the current-epoch list. -/
 private def gAttState (P : Preset) (s : Slot) (part : Option (Array ParticipationFlags)) :
-    SSZ.Box Sha256 (@EthCLSpecs.Gloas.BeaconState P) :=
+    @EthCLSpecs.Gloas.BeaconState P :=
   letI : Preset := P
   let v : Validator :=
     { (default : Validator) with
       effectiveBalance := 32000000000,
       exitEpoch := Const.farFutureEpoch, withdrawableEpoch := Const.farFutureEpoch }
-  SSZ.FastBox
-    { (default : @EthCLSpecs.Gloas.BeaconState P) with
-      slot := s
-      validators := ⟨Array.replicate 8 v⟩
-      balances := ⟨Array.replicate 8 32000000000⟩
-      currentEpochParticipation := ⟨part.getD #[]⟩ }
+  { (default : @EthCLSpecs.Gloas.BeaconState P) with
+    slot := s
+    validators := ⟨Array.replicate 8 v⟩
+    balances := ⟨Array.replicate 8 32000000000⟩
+    currentEpochParticipation := ⟨part.getD #[]⟩ }
 
 /-- The Gloas twin of `noTargetAtt`. Gloas `aggregation_bits` is an uncapped
 `ProgressiveBitlist` (EIP-7688). -/
@@ -243,20 +238,20 @@ private def gNoTargetAtt (P : Preset) (slot : Slot) (targetEpoch : Epoch) : @Att
     committeeBits := bitSet default 0 true }
 
 /-- Runs Gloas `process_attestation` with `parent_slot = 0` from an explicit state. -/
-private def gAttRunFrom (P : Preset) (st : SSZ.Box Sha256 (@EthCLSpecs.Gloas.BeaconState P))
+private def gAttRunFrom (P : Preset) (st : @EthCLSpecs.Gloas.BeaconState P)
     (att : @Attestation P) :
-    EStateM.Result StateTransitionError (SSZ.Box Sha256 (@EthCLSpecs.Gloas.BeaconState P)) Unit :=
+    EStateM.Result StateTransitionError (@EthCLSpecs.Gloas.BeaconState P) Unit :=
   letI : Preset := P
   letI : Config := minimalConfig
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.verifyOff
   (processAttestation att 0 : EStateM StateTransitionError
-    (SSZ.Box Sha256 (@EthCLSpecs.Gloas.BeaconState P)) Unit).run st
+    (@EthCLSpecs.Gloas.BeaconState P) Unit).run st
 
 /-- Runs Gloas `process_attestation` over the fixture state. -/
 private def gAttRun (P : Preset) (s : Slot) (part : Option (Array ParticipationFlags))
     (att : @Attestation P) :
-    EStateM.Result StateTransitionError (SSZ.Box Sha256 (@EthCLSpecs.Gloas.BeaconState P)) Unit :=
+    EStateM.Result StateTransitionError (@EthCLSpecs.Gloas.BeaconState P) Unit :=
   gAttRunFrom P (gAttState P s part) att
 
 /-! ### 3. The short-circuit placement (Gloas) -/
@@ -297,7 +292,6 @@ example : pinGloasEarnedFlagReads = true := by native_decide
 unchanged. -/
 private def pinGloasSecondRunChangesNothing : Bool :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let att := gNoTargetAtt minimal 17 2
   match gAttRun minimal 19 (some (Array.replicate 8 0)) att with
   | .error _ _ => false
