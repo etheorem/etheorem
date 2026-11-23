@@ -7,7 +7,7 @@ import SizzLean.Proofs.ProgressiveListPush
 /-!
 # `EthCLSpecs.Proofs.Gloas.BuilderPendingPayments`: the builder-payment epoch substep
 
-`EthCLSpecs.Gloas.processBuilderPendingPayments` (`Gloas/EpochProcessing.lean:376-393`)
+`EthCLSpecs.Gloas.processBuilderPendingPayments` (`Gloas/EpochProcessing.lean:377-395`)
 computes the quorum threshold, then modifies two fields sequentially within one state
 transition. This file characterizes the whole transition as one value. When
 `builderPaymentQuorum preState` succeeds, the run on `preState` returns `preState` with
@@ -698,8 +698,8 @@ theorem processBuilderPendingPayments_run [Preset] :
     (fun i => (vget preState.builderPendingPayments i).withdrawal) preState
   unfold processBuilderPendingPayments builderPaymentQuorum
   -- Re-elaborate the source shape here: the threshold call goes through `liftErr`,
-  -- the loop term matches `hloop`'s left side, and the final `sszUpdate` reduces
-  -- against the record-update form on the right.
+  -- the loop term matches `hloop`'s left side, and the final record update meets
+  -- the record update on the right.
   show (do
       let quorum ← liftErr (getBuilderPaymentQuorumThreshold preState)
       let payments := preState.builderPendingPayments
@@ -707,9 +707,10 @@ theorem processBuilderPendingPayments_run [Preset] :
         if (vget payments i).weight ≥ quorum then
           appendState builderPendingWithdrawals (vget payments i).withdrawal
       modifyState fun state =>
-        sszUpdate state with builderPendingPayments :=
-          shiftWindow (sszGet state builderPendingPayments) slotsPerEpoch slotsPerEpoch
-            (fun _ => (default : BuilderPendingPayment))
+        { state with
+            builderPendingPayments :=
+              shiftWindow state.builderPendingPayments slotsPerEpoch slotsPerEpoch
+                (fun _ => (default : BuilderPendingPayment)) }
       : GloasRun Unit).run preState
     = (match getBuilderPaymentQuorumThreshold preState with
       | .error e => .error e
@@ -744,9 +745,10 @@ theorem processBuilderPendingPayments_run [Preset] :
           if (vget payments i).weight ≥ quorum then
             appendState builderPendingWithdrawals (vget payments i).withdrawal
         modifyState fun state =>
-          sszUpdate state with builderPendingPayments :=
-            shiftWindow (sszGet state builderPendingPayments) slotsPerEpoch slotsPerEpoch
-              (fun _ => (default : BuilderPendingPayment))
+          { state with
+              builderPendingPayments :=
+                shiftWindow state.builderPendingPayments slotsPerEpoch slotsPerEpoch
+                  (fun _ => (default : BuilderPendingPayment)) }
         : GloasRun Unit).run preState
       = .ok ((), { preState with
           builderPendingWithdrawals := expectedWithdrawals quorum preState,
