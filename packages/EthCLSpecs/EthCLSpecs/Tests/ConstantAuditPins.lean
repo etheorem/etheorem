@@ -455,14 +455,13 @@ private def hezeAuditState : @State minimal fastHasherTag :=
       effectiveBalance := 32000000000
       exitEpoch := Const.farFutureEpoch
       withdrawableEpoch := Const.farFutureEpoch }
-  SSZ.FastBox
-    { (default : @BeaconState minimal) with
-      slot := 16
-      validators := ⟨#[v]⟩
-      balances := ⟨#[32000000000]⟩
-      previousEpochParticipation := ⟨#[0]⟩
-      currentEpochParticipation := ⟨#[0]⟩
-      inactivityScores := ⟨#[100]⟩ }
+  { (default : @BeaconState minimal) with
+    slot := 16
+    validators := ⟨#[v]⟩
+    balances := ⟨#[32000000000]⟩
+    previousEpochParticipation := ⟨#[0]⟩
+    currentEpochParticipation := ⟨#[0]⟩
+    inactivityScores := ⟨#[100]⟩ }
 
 /-- Heze `compute_proposer_score` under configuration `c`. -/
 private def hezeProposerScore (c : Config) : Outcome :=
@@ -576,7 +575,7 @@ private def hezeOnIl (c : Config) (intoSlotMs : CLUint64) : HezeIlOutcome :=
   let activeValidator : Validator := { (default : Validator) with exitEpoch := Const.farFutureEpoch }
   let vals := (Array.replicate Const.slotsPerEpoch activeValidator).foldl (·.push ·) base.validators
   let populated := { base with validators := vals }
-  let state : State := SSZ.FastBox populated
+  let state : State := populated
   let anchorBlock : @EthCLSpecs.Heze.BeaconBlock minimal :=
     { (default : @EthCLSpecs.Heze.BeaconBlock minimal) with stateRoot := htr populated }
   let anchorRoot := htr anchorBlock
