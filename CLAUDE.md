@@ -261,12 +261,11 @@ them and a near miss wastes a rebuild:
   `forkdef` declared, a target the statement never mentions, and a tag
   written outside the target fork's directory. Supporting lemmas stay
   untagged and still count as touched.
-- **State theorems over plain values.** Bind `v : BeaconState`, never a boxed
-  `State`, and read runs through `runPure` / `pureState`
-  (`SPECS_ARCHITECTURE.md` §11.1). The proof-coverage check rejects a
-  statement that quantifies over the box unless the theorem carries
-  `@[box_generic "reason"]`, which is a claim about the box and not a way
-  around the check.
+- **State theorems over plain values.** Bind `v : BeaconState` and state
+  the run with `.run`: `act.run preState = .ok (a, postState)`
+  (`SPECS_ARCHITECTURE.md` §11.1). A successful run states its result as
+  one whole `postState` value, and the statement reads fields directly,
+  `preState.slot`.
 - **Regenerate.** `just proof-coverage-update` rewrites the two baselines
   and the two README blocks; commit that diff with the proof.
   `just proof-coverage-check` is what CI runs, and it fails on a new proof
