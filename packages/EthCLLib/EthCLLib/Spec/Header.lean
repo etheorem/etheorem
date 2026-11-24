@@ -5,7 +5,7 @@ import EthCLLib.Spec.NestedMachine
 /-!
 # `EthCLLib.Spec.Header`: the section-header macros
 
-A fork's state-transition surface is set up by three macros, split along the seam
+A fork's state-transition surface is set up by two macros, split along the seam
 that **declarations persist across modules but `variable`s do not**:
 
 * `state_preamble BeaconState` runs **once per fork**, in the `State` module, right
