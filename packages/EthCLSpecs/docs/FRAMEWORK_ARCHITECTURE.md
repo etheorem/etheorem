@@ -490,6 +490,13 @@ author reads and writes every container the same way, at any depth. The hasher
 enters only at a root: `getStateRoot` merkleizes the threaded state, and `htr` any
 other value.
 
+`just check-no-box` keeps the model in force, and the CI `ethcl` job runs it. It
+searches the `EthCLLib` and `EthCLSpecs` source trees for the box names. Then
+`scripts/NoBoxInSpecs.lean` reads the built environment and fails when a constant
+of those trees depends on `SizzLean.Cache.SSZ.Box` or its backings. The bench
+library `EthCLSpecsBench` stays outside the rule, because its profile measures the
+cache.
+
 Fork-incremental declaration uses the inheritance mechanism: raw field-list
 capture replayed in the child namespace, so inherited field types and capacity
 constants late-bind to the child's overrides. Two cases, the same as for
