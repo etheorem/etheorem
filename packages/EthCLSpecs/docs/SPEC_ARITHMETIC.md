@@ -418,7 +418,10 @@ class ToIndex (ι : Type) where
 It has instances for `Nat`, `CLUint64`, and `CLInt`. The `CLInt` instance counts a negative
 index from the end. Its `idx?` gives `0` for a negative index, because the `IndexError`
 payload holds a `Nat`. The pure read `getAt`, the pure write `setAt`, and the raising read
-`sszGetIdx` take any index type with an instance. `SizzLean` keeps `Nat` indices.
+`sszGetIdx` take any index type with an instance. The read takes the collection as a
+projection of the plain state, as in `sszGetIdx state.validators i`. `SizzLean` keeps
+`Nat` indices. Its collection writes `set!` and `modify` take a `Nat` position, such as
+`i.toPlainNat` for a `ValidatorIndex`.
 
 The raising read stays in the ambient monad. Its failure remains `IndexError`-shaped,
 mapped to `outOfBounds` by the error conversion.
@@ -480,8 +483,8 @@ Provide chain lemmas that expose every intermediate range test, plus laws for ca
 positive divisors, lifts, and index conversion. Keep a focused arithmetic simp set.
 Move reusable checked-fold lemmas into the framework before duplicating them across forks.
 
-A transition characterization states successful results and failure behavior through
-`runPure` over a plain state. An `.ok` hypothesis must name a real arithmetic obligation. Keep a
+A transition characterization states successful results and failure behavior with `.run`
+over a plain state. An `.ok` hypothesis must name a real arithmetic obligation. Keep a
 separate characterization of failure when a successful-case theorem needs that hypothesis.
 State theorems about each fork's own re-elaborated declarations.
 
@@ -595,11 +598,10 @@ when the source is a Python plain-integer subtraction.
 
 ### 5.7 Why the index class sits in `EthCLLib`
 
-`SizzLean` could own the class, and its path forms `sszGet state f[i]` could then take a checked
-index. Those forms exist to hide the state box and to drive the cached tree update. A state
-held as a plain value does not need them: a read is a projection and a write is a structure
-update. `sszGetIdx` is a function in `EthCLLib` with no reference to the box, so the class
-belongs beside it.
+`SizzLean` keeps `Nat` positions in its collection API. The checked index types
+(`CLUint64`, `CLInt`) and the pyspec's `IndexError` rule belong to the spec model, and
+both live in `EthCLLib`. `sszGetIdx`, the reader that uses the class, is a function in
+`EthCLLib`, so the class sits beside it.
 
 ## 6. What the rule allows and forbids
 
