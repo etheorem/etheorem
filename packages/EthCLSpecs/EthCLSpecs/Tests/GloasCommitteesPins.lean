@@ -5,8 +5,8 @@ import EthCLSpecs.Gloas.EpochProcessing
 
 The pins for `compute_balance_weighted_selection`'s `assert total > 0`
 (`gloas/beacon-chain.md:1213`) and its `uint64` loop counter, which no conformance vector
-reaches. `State` is FFI-backed, so `native_decide`. The counter pin builds no `State`, so
-it runs as a `#guard`.
+reaches. The pins hash through the FFI `Sha256` (`fastHasherTag`), so `native_decide`. The
+counter pin builds no `State`, so it runs as a `#guard`.
 
 Fires on `lake build EthCLSpecsTests` (`just ethcl-test`).
 -/
@@ -23,20 +23,18 @@ namespace EthCLSpecs.Tests.GloasCommitteesPins
 
 open EthCLSpecs.Gloas
 
-/-- The pins' state-machine monad over the minimal preset and the FFI hasher. -/
-private abbrev PinM := EStateM StateTransitionError (@State minimal fastHasherTag)
+/-- The pins' state-machine monad over the minimal preset. -/
+private abbrev PinM := EStateM StateTransitionError (@State minimal)
 
 /-- A minimal Gloas state with one active 32 ETH validator, slashed or not. -/
-private def oneValidatorState (slashed : Bool) : @State minimal fastHasherTag :=
+private def oneValidatorState (slashed : Bool) : @State minimal :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let v : Validator :=
     { (default : Validator) with
       effectiveBalance := 32000000000, slashed,
       exitEpoch := Const.farFutureEpoch, withdrawableEpoch := Const.farFutureEpoch }
-  SSZ.FastBox
-    { (default : @EthCLSpecs.Gloas.BeaconState minimal) with
-      validators := ⟨#[v]⟩, balances := ⟨#[32000000000]⟩ }
+  { (default : @EthCLSpecs.Gloas.BeaconState minimal) with
+    validators := ⟨#[v]⟩, balances := ⟨#[32000000000]⟩ }
 
 /-- An empty `indices` rejects with `.assert`. -/
 private def pinSelectionEmptyRejects : Bool :=

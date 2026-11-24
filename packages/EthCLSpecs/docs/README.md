@@ -30,9 +30,9 @@ catalogued per fork.
 
 [SPEC_ARITHMETIC.md](SPEC_ARITHMETIC.md) is the arithmetic contract for all
 consensus-spec code in `EthCLSpecs`: the implemented checked behavior and the
-authoring rules. [SPEC_ARITHMETIC_PLAN.md](SPEC_ARITHMETIC_PLAN.md) is the temporary
-transition plan; its stages record the migration state, and the final acceptance stage
-removes it. [SPEC_ARITHMETIC_LINTING.md](SPEC_ARITHMETIC_LINTING.md) records deferred
+authoring rules. The spec arithmetic completion record in
+[IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md) holds the transition's scope, costs,
+and verification. [SPEC_ARITHMETIC_LINTING.md](SPEC_ARITHMETIC_LINTING.md) records deferred
 automated checks for the authoring rules. No linter enforces them; implementation and
 activation are separate follow-up work outside the transition.
 

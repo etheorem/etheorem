@@ -25,7 +25,7 @@ state_section
 §3.2), so the result carries the fold's fault, after the active set's checked casts and
 the total's raising registry reads. -/
 forkdef getTotalActiveBalance (state : State) : Except StateTransitionError Gwei := do
-  let active ← getActiveValidatorIndices state (computeEpochAtSlot (sszGet state slot))
+  let active ← getActiveValidatorIndices state (computeEpochAtSlot state.slot)
   getTotalBalance state active
 
 /-- `get_unslashed_participating_indices(state, flag_index, epoch)`
@@ -38,9 +38,9 @@ leading `assert epoch in (previous, current)` has no Lean twin: every caller pas
 previous or the current epoch. -/
 forkdef getUnslashedParticipatingIndices (state : State) (flagIndex : Nat) (epoch : Epoch) :
     Except StateTransitionError (Array ValidatorIndex) := do
-  let isCurrent := epoch == computeEpochAtSlot (sszGet state slot)
-  let part := if isCurrent then sszGet state currentEpochParticipation else sszGet state previousEpochParticipation
-  let validators := sszGet state validators
+  let isCurrent := epoch == computeEpochAtSlot state.slot
+  let part := if isCurrent then state.currentEpochParticipation else state.previousEpochParticipation
+  let validators := state.validators
   let active ← getActiveValidatorIndices state epoch
   let mut participating : Array ValidatorIndex := #[]
   for i in active do
@@ -65,10 +65,10 @@ forkdef getBlockRootAtSlot (state : State) (s : Slot) : StateTransition Root := 
   -- short-circuits: `slot < state.slot` is checked first (a caught `AssertionError`), and only then
   -- is `slot + SPHR` formed. That `uint64` sum raises `ValueError` on overflow, an uncaught fault the
   -- runner does not catch, so it binds (the checked add) after the first assert.
-  assert (s < sszGet state slot)
+  assert (s < state.slot)
   let bound ← s + Const.slotsPerHistoricalRootC
-  assert (sszGet state slot ≤ bound)
-  pure (vmodGet (sszGet state blockRoots) s.val Const.slotsPerHistoricalRoot)
+  assert (state.slot ≤ bound)
+  pure (vmodGet state.blockRoots s.val Const.slotsPerHistoricalRoot)
 
 /-- `get_block_root` (`fulu/mainnet.py:1440-1444`): the epoch's first slot. The start slot
 is `compute_start_slot_at_epoch`, so its checked product binds here. -/
@@ -79,7 +79,7 @@ forkdef getBlockRoot (state : State) (epoch : Epoch) : StateTransition Root := d
 `balance += withdrawal.amount` is a checked add (`SPEC_ARITHMETIC.md` §3.2, the
 `sum` row), so the fold carries its fault. -/
 forkdef getPendingBalanceToWithdraw (state : State) (vi : ValidatorIndex) : Checked Gwei :=
-  (sszGet state pendingPartialWithdrawals).val.foldlM
+  state.pendingPartialWithdrawals.val.foldlM
     (fun acc w => if w.validatorIndex == vi then acc + w.amount else pure acc) (0 : Gwei)
 
 end
