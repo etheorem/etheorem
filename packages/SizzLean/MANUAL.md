@@ -25,10 +25,11 @@ type you hold and in what a root read costs.
 | Box | `SSZ.Box H T` | `sszGet` / `sszUpdate` | `.hashTreeRoot`, flavour picked at the wrap | one source that runs cached in production and uncached in proofs |
 | Cache only | `CachedSSZ H T` / `TreeBacked` | `sszGet` / `sszUpdate` | O(1) read after an O(log N) spine rehash | hot paths that root a large value many times |
 
-The plain mode needs no type of its own: you hold the value that
-`deriving SSZRepr` serves. It is the verified core, and the
-library proves or tests the other two modes against it. Start there, and wrap in a box or a cache only when
-a measured root cost asks for it.
+The plain mode needs no type of its own: you hold the structure
+that derives `SSZRepr`. It is the verified core, and the library
+proves or tests the other two modes against it. Start there, and
+wrap in a box or a cache only when a measured root cost asks for
+it.
 
 ### The plain mode
 
@@ -69,16 +70,20 @@ example :
   rfl
 ```
 
-Swap `Sha256` for `Sha256Spec` and the root reduces in the
-kernel, so `decide` can check concrete root bytes with no
-compiler axiom. The value itself does not change.
+Swap `Sha256` for `Sha256Spec` and the hash runs in pure Lean:
+`native_decide` still checks concrete root bytes, and the proof
+then trusts no FFI, only `native_decide`'s own compiler axiom.
+`decide` cannot reduce the merkleization itself; see
+[Proving things about your spec](#proving-things-about-your-spec)
+for the tactic each goal shape needs. The value itself does not
+change.
 
 ### The box mode
 
 The box mode wraps the value in **`SSZ.Box H T`**. The type lets
 you pick the *cache flavour* (cached for production, uncached for
 proofs) and the *hasher* (`Sha256` FFI by default, `Sha256Spec`
-for kernel-reducible proofs, or any other `Hasher` instance) at
+for FFI-free proofs, or any other `Hasher` instance) at
 the call site. Write the spec generic in `SSZ.Box H T`, and the
 same source serves the production path and the proof path.
 
@@ -103,8 +108,8 @@ example :
   rfl
 ```
 
-For full control, including a pure-Lean hasher for
-kernel-reducible proofs of concrete root bytes, or a future
+For full control, including a pure-Lean hasher that keeps the FFI
+out of your proofs' trusted base, or a future
 post-quantum hasher, there are hasher-explicit constructors:
 
 ```lean
@@ -112,9 +117,10 @@ post-quantum hasher, there are hasher-explicit constructors:
 -- reference). Same generic `bumpEpochBox`, only the wrap differs.
 #eval (bumpEpochBox (SSZ.CachedBox Sha256Spec f0) 42).hashTreeRoot.1
 
--- Uncached, with a chosen hasher. Now the whole pipeline
--- (deserialise, update, root) reduces in the Lean kernel without
--- a single FFI call, so `decide` works without any compiler axiom.
+-- Uncached, with a chosen hasher. The whole pipeline
+-- (deserialise, update, root) runs in pure Lean, with no FFI
+-- call; `native_decide` on its results adds only its own
+-- compiler axiom.
 example :
     (bumpEpochBox (SSZ.UncachedBox Sha256Spec f0) 42).hashTreeRoot
       = (SSZ.UncachedBox Sha256Spec ({ f0 with epoch := 42 } : Fork)).hashTreeRoot := by
@@ -141,15 +147,16 @@ In a production pipeline you wrap with the cached flavour once,
 then run many `sszUpdate`s on the result, the cache pays for
 itself across the second and subsequent root computations. In a
 proof you wrap with the uncached flavour because you want every
-`hashTreeRoot` call to be transparent to the kernel; closing a
-theorem with `rfl` or `decide` is then routine.
+`hashTreeRoot` call to reduce like an ordinary function of the
+value; closing a theorem with `rfl` (concrete bytes included,
+via `native_decide`) is then routine.
 
 **Hasher**: `Sha256` (default, FFI) vs anything else:
 
 | Hasher | When to pick it |
 |---|---|
 | `Sha256` (default, what `SSZ.FastBox v` / `SSZ.PureBox v` use) | running real code; proofs about concrete root bytes via `native_decide` (one compiler axiom per call) |
-| `Sha256Spec` (pure-Lean reference) | proofs where you want hashes to reduce *in the kernel*, with no compiler axiom, close goals with plain `decide` (or `rfl` when both sides hash the same buffers symbolically) |
+| `Sha256Spec` (pure-Lean reference) | proofs about concrete root bytes with the FFI out of the trusted base: `native_decide` adds only its own compiler axiom, no FFI-equivalence axioms (or `rfl` when both sides hash the same buffers symbolically) |
 | any future `Hasher` instance (e.g. Poseidon2) | adopt by writing your spec generic in `H` today; only the wrap at the call site changes when the new hasher arrives |
 
 The hasher axis applies to plain values too: it is the first
@@ -164,10 +171,30 @@ switching is one expression at the call site.
 `CachedSSZ H T` (an `abbrev` for `TreeBacked H T`, in
 `SizzLean.Cache`) is the cached flavour without the box around
 it. Build one with `CachedSSZ.ofValue H v`, write with
-`sszUpdate`, and read the root with `.hashTreeRoot`, which
-returns the root and the updated cache as a pair. Use it on a
-hot path that roots one large value many times and has no proof
+`sszUpdate`, and read the root with `CachedSSZ.hashTreeRoot`,
+which returns the root and the updated cache as a pair. Use it on
+a hot path that roots one large value many times and has no proof
 side to serve.
+
+```lean
+def cachedRoot : ByteArray :=
+  (CachedSSZ.hashTreeRoot
+    (sszUpdate (CachedSSZ.ofValue Sha256 f0) with epoch := 42)).1
+
+-- Same root as the plain mode computed above
+#eval cachedRoot == SSZ.hashTreeRoot Sha256 (bumpEpoch f0 42)
+-- true
+```
+
+One naming trap: after an `sszUpdate`, hold the result under the
+`CachedSSZ` name before reading the root with dot notation. The
+macro types its result as the internal `TreeBacked`, whose
+namespace spells the reader `.hashTreeRootCached`, so a bare
+`let c := sszUpdate c with …` makes `c.hashTreeRoot` fail to
+resolve. Either ascribe the `let`
+(`let c : CachedSSZ Sha256 Fork := sszUpdate …`), call
+`CachedSSZ.hashTreeRoot c`, or use `c.hashTreeRootCached`; all
+three read the same root.
 
 ## Defining your own containers
 
@@ -220,25 +247,26 @@ pattern.
 ## Hash-tree roots
 
 On a plain value, `SSZ.hashTreeRoot H v` returns the 32-byte root.
-It merkleizes the whole value on each call, and it reduces in the
-kernel whenever the hasher does.
+It merkleizes the whole value on each call. The merkleization is a
+well-founded recursion, so kernel `decide` cannot reduce it to
+bytes; `native_decide` evaluates it with either hasher.
 
 ```lean
 SSZ.hashTreeRoot Sha256 v       -- FFI SHA-256
-SSZ.hashTreeRoot Sha256Spec v   -- pure-Lean SHA-256, kernel-reducible
+SSZ.hashTreeRoot Sha256Spec v   -- pure-Lean SHA-256, no FFI trusted
 ```
 
 On an `SSZ.Box`, read the root via `.hashTreeRoot`. It returns
 a pair: the root, and the box with its cache filled. Keep the
 second part to reuse the cache. The cached flavour returns a
 pre-computed root in O(1); the uncached flavour re-runs the spec
-each call (kernel-reducible).
+each call.
 
 ```lean
 -- On a cached box — reads the cached root, O(1)
 (SSZ.FastBox v).hashTreeRoot
 
--- On an uncached box — runs the spec each call, kernel-reducible
+-- On an uncached box — runs the spec each call
 (SSZ.PureBox v).hashTreeRoot
 ```
 
@@ -276,7 +304,11 @@ let s'  := { s with validators := s.validators.modify i fun v =>
 let vs? := s.validators.push? v
 ```
 
-`modify` exists on `SSZList`, `ProgressiveList` and `Vector`.
+`get!` needs an `Inhabited` instance for the element type (it
+returns `default` on a miss), so derive it too: `deriving
+SSZRepr, Inhabited` on your container. `set!`, `modify` and
+`push?` need no instance. `modify` exists on `SSZList`,
+`ProgressiveList` and `Vector`.
 Out of range it returns the collection unchanged, as `set!`
 does. See [`.modify`](#modify) in the API reference.
 
@@ -344,21 +376,24 @@ rather than walking the Merkle spine on the spot. The spine
 walk happens at the next root read. So a chain
 
 ```lean
-let s := sszUpdate s with x := 1
-let s := sszUpdate s with y := 2
-let s := sszUpdate s with z := 3
+let s : SSZ.Box Sha256 T := sszUpdate s with x := 1
+let s : SSZ.Box Sha256 T := sszUpdate s with y := 2
+let s : SSZ.Box Sha256 T := sszUpdate s with z := 3
 -- one root read here
 let (root, s) := s.hashTreeRoot
 ```
 
-produces *one* spine walk at the read, not three. The uncached
-flavour emits struct rewrites with no pending state, so `rfl` /
-`decide` proofs reduce identically.
+produces *one* spine walk at the read, not three. Ascribe each
+chained `let` (here `T` is your container, `Sha256` your hasher):
+the macro reads the base's static type, and an unascribed `let`
+holding an earlier `sszUpdate` result leaves it unresolved, so
+the next `sszUpdate` in the chain fails to elaborate. The
+uncached flavour emits struct rewrites with no pending state, so
+`rfl` / `decide` proofs reduce identically.
 
 ### Serialising and deserialising
 
-On a plain value, `SSZ.serialize` and `SSZ.deserialize` are the
-whole story:
+On a plain value, use `SSZ.serialize` and `SSZ.deserialize`:
 
 ```lean
 def roundtrip (bytes : ByteArray) : Except SSZError ByteArray := do
@@ -424,6 +459,8 @@ Three idioms work:
    (`packages/SizzLean/SizzLeanTests/ReprExamples.lean`):
 
    ```lean
+   import SizzLean.Proofs.SizeBound   -- for `encodedFits_of_maxByteLength_lt`
+
    example (p : Pair) : SSZ.deserialize (SSZ.serialize p) = .ok p :=
      SSZ.roundtrip p (by decide)
        (SizzLean.Proofs.encodedFits_of_maxByteLength_lt
@@ -488,7 +525,16 @@ involves `hashTreeRoot`. Pick by what the goal needs:
 | Symbolic state-transition equality, both sides hash the same buffers; no concrete bytes needed | `rfl` / `simp` / `unfold` | no extra trust commitment |
 | FFI-hashed term must reduce to concrete bytes (e.g. *"this state's root is `0xAB…`"*) | `native_decide` | adds the standard `Lean.ofReduceBool` compiler axiom |
 | FFI-hashed term you want to manipulate symbolically before evaluating | rewrite with `sha256Hash_eq_spec` / `sha256Combine_eq_spec`, then `native_decide` | cites the two named FFI ≡ pure-Lean equivalence axioms, both auditable by name |
-| Pure-Lean hashed term (`SSZ.hashTreeRoot Sha256Spec v`, or a box built via `SSZ.UncachedBox Sha256Spec` / `SSZ.CachedBox Sha256Spec`) → concrete bytes | `decide` (kernel reduction) | no compiler axiom, no FFI; slower but maximum trust |
+| Pure-Lean hashed term (`SSZ.hashTreeRoot Sha256Spec v`, or a box built via `SSZ.UncachedBox Sha256Spec` / `SSZ.CachedBox Sha256Spec`) → concrete bytes | `native_decide` | the hash runs in pure Lean, so the FFI-equivalence axioms drop out; the `native_decide` compiler axiom stays |
+
+One limit to know: kernel `decide` cannot reduce a concrete-root
+goal under any hasher. The merkleization on top of the hasher
+primitives is a well-founded recursion (`Spec/HashTreeRoot.lean`),
+and `decide` does not unfold it, so reduction gets stuck even
+when the hasher itself is pure Lean. Goals about the primitives
+alone — a bare `Hasher.hash (H := Sha256Spec) b`, say — do close
+by plain `decide`. For the whole root, `native_decide` is the
+tactic, with either hasher.
 
 On plain values the first row is the common case. A plain
 transition is a function from `T` to `T`, so a theorem about it
@@ -508,8 +554,9 @@ example :
 There is no wrap and no cache invariant to carry. The box modes
 reach the same statements through `.view`.
 
-Rule of thumb: **use `native_decide` whenever a goal needs an
-FFI hash to reduce to bytes**; use `rfl` when both sides hash the
+Rule of thumb: **use `native_decide` whenever a goal needs a
+hash to reduce to bytes, with either hasher**; use `rfl` when
+both sides hash the
 same buffers symbolically. Use plain `decide` for non-hash
 decidable goals (Nat comparisons, structural enums, finite
 bitvector reasoning), those don't need any compiler axiom.
@@ -622,6 +669,18 @@ All available from:
 import SizzLean
 ```
 
+The bare names this manual writes (`Sha256`, `SSZList`,
+`SSZError`, `CachedSSZ`, `sszGet`, `sszUpdate`) sit in
+sub-namespaces, so add these `open` lines too:
+
+```lean
+open SizzLean        -- the `SSZ.*` surface, the `Hasher` class
+open SizzLean.Hasher -- the hasher tags `Sha256`, `Sha256Spec`
+open SizzLean.Repr   -- the collection types `SSZList`, `Bitvector`, `Bitlist`
+open SizzLean.Spec   -- the error type `SSZError`
+open SizzLean.Cache  -- `CachedSSZ`, the `sszGet` / `sszUpdate` macros
+```
+
 The consensus-spec containers themselves live in the sibling
 `EthCLSpecs` package; add an `[[require]]` for it in your
 `lakefile.toml` and import what you need from
@@ -631,7 +690,8 @@ The consensus-spec containers themselves live in the sibling
 
 The full user-facing surface, organised by what you reach for it
 for. Examples assume the `Fork` container from the worked example
-earlier in the manual and the `import SizzLean` line in scope.
+earlier in the manual and the import and `open` lines from
+[Importing the library](#importing-the-library) in scope.
 
 Four sections:
 
@@ -642,8 +702,9 @@ Four sections:
 3. **[The Box interface](#the-box-interface)**: the box
    constructors, the read / write / root / serialise operations,
    and the box deserialisers.
-4. **[Miscellaneous](#miscellaneous)**: hasher tags and the
-   FFI-equivalence axioms; cross-cutting infrastructure.
+4. **[Miscellaneous](#miscellaneous)**: the error type
+   `SSZError`, hasher tags and the FFI-equivalence axioms;
+   cross-cutting infrastructure.
 
 ### Creating containers
 
@@ -691,7 +752,10 @@ deriving SSZRepr
 #### `SSZList.get!`, `SSZList.set!`, `SSZList.modify`, `SSZList.size`
 
 Element access / replacement / read-modify-write / length.
-`get!` returns `default` on out-of-bounds. `set!` and `modify`
+`get!` returns `default` on out-of-bounds, which is why it needs
+an `Inhabited` instance for the element type (`deriving
+SSZRepr, Inhabited` on your container covers it); `set!`,
+`modify` and `push?`
 are no-ops on out-of-bounds and preserve the cap proof either
 way. `modify i f` replaces element `i` with `f` applied to it.
 `size` is the runtime length.
@@ -735,11 +799,16 @@ the `SSZ` namespace. Reads and writes need no function: use
 
 `SSZ.hashTreeRoot H v` merkleizes `v` with the hasher `H` and
 returns the 32-byte root. It recomputes the whole tree on each
-call. With `Sha256Spec` it reduces in the kernel.
+call. With `Sha256Spec` the hash runs in pure Lean, so a
+`native_decide` proof about its output trusts no FFI.
 
 ```lean
 #eval SSZ.hashTreeRoot Sha256 f0
-example : SSZ.hashTreeRoot Sha256Spec f0 = SSZ.hashTreeRoot Sha256Spec f0 := rfl
+
+-- The two hashers agree on this root. `native_decide` checks it;
+-- with `Sha256Spec` on the left the proof cites no FFI axiom.
+example : SSZ.hashTreeRoot Sha256Spec f0 = SSZ.hashTreeRoot Sha256 f0 := by
+  native_decide
 ```
 
 #### `SSZ.serialize`
@@ -844,12 +913,12 @@ opt-in as `FastBox`.
 
 Hasher-explicit uncached smart constructor, like `PureBox` but
 the caller picks the `Hasher`. With `Sha256Spec` the whole
-hashing pipeline reduces in the kernel without an FFI hop.
+hashing pipeline runs in pure Lean, without an FFI hop.
 
 ```lean
 example :
-    (SSZ.UncachedBox Sha256Spec f0).hashTreeRoot
-      = (SSZ.UncachedBox Sha256Spec f0).hashTreeRoot := by rfl
+    (SSZ.UncachedBox Sha256Spec f0).hashTreeRoot.1
+      = SSZ.hashTreeRoot Sha256Spec f0 := by native_decide
 ```
 
 #### `sszGet`
@@ -948,20 +1017,22 @@ When you hold plain values, use
 [`SSZ.deserialize`](#sszdeserialize) instead. It returns the
 plain `T`.
 
+### Miscellaneous
+
+Cross-cutting infrastructure used by every mode: the error type
+`SSZError`, the hasher tags
+and the FFI ≡ pure-Lean equivalence axioms.
+
 #### `SSZError`
 
 Sum of deserialise-error shapes (truncation, oversize, bad
-offsets, etc.). Pattern-match on it for fine-grained handling
-or just `repr` it for diagnostics.
+offsets, etc.). Returned by the plain `SSZ.deserialize` and by
+every box deserialiser. Pattern-match on it for fine-grained
+handling or just `repr` it for diagnostics.
 
 ```lean
 def explain : SSZError → String := fun e => s!"deserialize: {repr e}"
 ```
-
-### Miscellaneous
-
-Cross-cutting infrastructure used by every mode, hasher tags
-and the FFI ≡ pure-Lean equivalence axioms.
 
 #### `Hasher`
 
@@ -990,13 +1061,20 @@ Lean kernel. Kernel-`decide` can't reduce its hashes, so use
 
 Empty `inductive` tag whose `Hasher` instance delegates to the
 pure-Lean SHA-256 reference (from the sibling `LeanSha256`
-library). Kernel-reducible. `decide` works on its outputs
-without a compiler axiom; the trade-off is the kernel has to
-walk the SHA-256 compression function each call (slower).
+library). Its hashing primitives reduce in the kernel, so a bare
+`Hasher.hash (H := Sha256Spec)` goal closes by plain `decide`;
+the merkleization on top is a well-founded recursion, so a
+concrete-root goal closes by `native_decide` instead. The
+trade-off is speed versus proof trust: `native_decide`'s compiler
+axiom stays, but the FFI and the FFI-equivalence axioms drop out,
+and the pure-Lean hash costs a walk of the SHA-256 compression
+function each call (slower).
 
 ```lean
-example : (SSZ.UncachedBox Sha256Spec f0).hashTreeRoot = <concrete-bytes> := by
-  decide   -- no `native_decide` needed; no compiler axiom
+example :
+    (SSZ.UncachedBox Sha256Spec f0).hashTreeRoot.1
+      = SSZ.hashTreeRoot Sha256Spec f0 := by
+  native_decide   -- pure Lean: no FFI, no FFI-equivalence axioms
 ```
 
 #### `sha256Hash_eq_spec`, `sha256Combine_eq_spec`
@@ -1009,6 +1087,6 @@ term symbolically before evaluating with `native_decide`.
 
 ```lean
 example (b : ByteArray) :
-    sha256Hash b = LeanSha256.hash b := by
+    LeanHazmat.Sha256.sha256Hash b = LeanSha256.hash b := by
   rw [sha256Hash_eq_spec]
 ```
