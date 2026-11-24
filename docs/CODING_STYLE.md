@@ -68,12 +68,12 @@ forkdef processAttestation (att : Attestation) (parentSlot : Slot) : StateTransi
   assert (data.target.epoch == previousEpochOf state || data.target.epoch == currentEpochOf state)
   assert (data.target.epoch == computeEpochAtSlot data.slot)
   let inclusionSlot ← data.slot + Const.minAttestationInclusionDelay
-  assert (inclusionSlot ≤ sszGet state slot)
+  assert (inclusionSlot ≤ state.slot)
   assert (data.index < 2)
   let (ok, offset) ← liftErr (verifyCommitteeCoverage state data att)
   assert ok
   assert (att.aggregationBits.size == offset)
-  let inclusionDelay ← (sszGet state slot) - data.slot
+  let inclusionDelay ← state.slot - data.slot
   let flagIndices ← match ← getAttestationParticipationFlagIndices state data inclusionDelay parentSlot with
     | some f => pure f
     | none   => throw (StateTransitionError.assert "attestation participation flags")
@@ -86,7 +86,7 @@ forkdef processAttestation (att : Attestation) (parentSlot : Slot) : StateTransi
   let proposerDenom ← (Const.weightDenominator - Const.proposerWeight) * Const.weightDenominator / Const.proposerWeight
   let proposerReward ← proposerNum / proposerDenom
   stateAcc ← increaseBalance stateAcc (getBeaconProposerIndex stateAcc) proposerReward
-  stateAcc := sszUpdate stateAcc with builderPendingPayments[paymentIdx]! := { payment0 with weight := weight }
+  stateAcc := { stateAcc with builderPendingPayments := stateAcc.builderPendingPayments.set! paymentIdx { payment0 with weight := weight } }
   set stateAcc
 ```
 
@@ -103,7 +103,7 @@ forkdef processAttestation (att : Attestation) (parentSlot : Slot) : StateTransi
   assert (data.target.epoch == computeEpochAtSlot data.slot)
   -- …
   let inclusionSlot ← data.slot + Const.minAttestationInclusionDelay
-  assert (inclusionSlot ≤ sszGet state slot)
+  assert (inclusionSlot ≤ state.slot)
   assert (data.index < 2)
 
   -- Every committee index is valid and non-empty; the bitfield covers them all.
@@ -114,7 +114,7 @@ forkdef processAttestation (att : Attestation) (parentSlot : Slot) : StateTransi
   -- Resolve the participation flags, then validate the aggregate signature. The
   -- inclusion delay is the pyspec's checked `state.slot - data.slot`, bound at the
   -- argument position Python evaluates it.
-  let inclusionDelay ← (sszGet state slot) - data.slot
+  let inclusionDelay ← state.slot - data.slot
   let flagIndices ← match ← getAttestationParticipationFlagIndices state data inclusionDelay parentSlot with
     | some f => pure f
     | none   => throw (StateTransitionError.assert "attestation participation flags")
@@ -132,7 +132,7 @@ forkdef processAttestation (att : Attestation) (parentSlot : Slot) : StateTransi
   let proposerDenom ← (Const.weightDenominator - Const.proposerWeight) * Const.weightDenominator / Const.proposerWeight
   let proposerReward ← proposerNum / proposerDenom
   stateAcc ← increaseBalance stateAcc (getBeaconProposerIndex stateAcc) proposerReward
-  stateAcc := sszUpdate stateAcc with builderPendingPayments[paymentIdx]! := { payment0 with weight := weight }
+  stateAcc := { stateAcc with builderPendingPayments := stateAcc.builderPendingPayments.set! paymentIdx { payment0 with weight := weight } }
   set stateAcc
 ```
 
@@ -228,13 +228,13 @@ forkdef processPendingDeposits : StateTransition Unit := do
   let state ← get
   let nextEpoch ← currentEpochOf state + 1
   let availableForProcessing ←
-    (sszGet state depositBalanceToConsume) + (← liftErr (getActivationExitChurnLimit state))
+    state.depositBalanceToConsume + (← liftErr (getActivationExitChurnLimit state))
   let mut processedAmount : Gwei := 0
   let mut nextDepositIndex := 0
   let mut depositsToPostpone : Array PendingDeposit := #[]
   let mut isChurnLimitReached := false
-  let finalizedSlot ← computeStartSlotAtEpoch (sszGet state finalizedCheckpoint).epoch
-  let pendingDeposits := (sszGet state pendingDeposits).toArray
+  let finalizedSlot ← computeStartSlotAtEpoch state.finalizedCheckpoint.epoch
+  let pendingDeposits := state.pendingDeposits.toArray
 
   for deposit in pendingDeposits do
     …
@@ -243,9 +243,9 @@ forkdef processPendingDeposits : StateTransition Unit := do
     sszOfArrayM "pendingDeposits" (pendingDeposits.extract nextDepositIndex ++ depositsToPostpone)
   let depositBalance : Gwei ←
     if isChurnLimitReached then availableForProcessing - processedAmount else pure 0
-  modifyState fun state => sszUpdate state with
+  modifyState fun state => { state with
     pendingDeposits := remaining,
-    depositBalanceToConsume := depositBalance
+    depositBalanceToConsume := depositBalance }
 ```
 
 No header is needed on the setup: the binding names are the pinned text's names, so
@@ -288,7 +288,7 @@ builders-sweep) processed counts" because the names alone do not say it:
 
 ```lean
 -- before
-  let wi0 := sszGet (← get) nextWithdrawalIndex
+  let wi0 := (← get).nextWithdrawalIndex
   let (bw, wi1, bc) ← getBuilderWithdrawals wi0 #[]
   let (pw, wi2, pc) ← getPendingPartialWithdrawals wi1 bw
   let prior2 := bw ++ pw
@@ -300,7 +300,7 @@ builders-sweep) processed counts" because the names alone do not say it:
 
 ```lean
 -- after
-  let firstIndex := sszGet (← get) nextWithdrawalIndex
+  let firstIndex := (← get).nextWithdrawalIndex
   let (builderWs, idxAfterBuilder, builderCount) ← getBuilderWithdrawals firstIndex #[]
   let (partialWs, idxAfterPartial, partialCount) ← getPendingPartialWithdrawals idxAfterBuilder builderWs
   let priorAfterPartial := builderWs ++ partialWs
@@ -404,7 +404,7 @@ forkdef onTick (timeMs : CLUint64) : StoreTransition Unit := do
   -- plain values (`SPEC_ARITHMETIC.md` §4.2, `Nat` for termination measures): the truncated
   -- difference is `0` on a backwards tick, where the loop `.done`s on its first pass. Each pass
   -- moves the clock to the next slot start, so `tickSlot - cur + 1` passes suffice;
-  -- `fuelIterateM!` throws on fuel-out rather than returning a wrong store.
+  -- On fuel-out, `fuelIterateM!` throws, so an exhausted bound never yields a store.
   fuelIterateM! (tickSlot.toPlainNat - cur.toPlainNat + 1) () "on_tick: per-slot catch-up" fun _ => do
     let cs ← getCurrentSlot (← get)
     if cs < tickSlot then
@@ -432,7 +432,7 @@ value, and the modulo and the write follow once:
 ```lean
 -- after
   let state ← get
-  let nvals := len (sszGet state validators)
+  let nvals := len state.validators
   let nextCursor ←
     if len expected == Const.maxWithdrawalsPerPayloadC.toCLInt then do
       let latestWithdrawal ← sszGetIdx expected (-1 : CLInt)
@@ -440,10 +440,10 @@ value, and the modulo and the write follow once:
       pure advanced
     else do
       let advanced ←
-        (sszGet state nextWithdrawalValidatorIndex + Const.maxValidatorsPerWithdrawalsSweep : Checked _)
+        (state.nextWithdrawalValidatorIndex + Const.maxValidatorsPerWithdrawalsSweep : Checked _)
       pure advanced
   let nextValidatorIndex ← (nextCursor % nvals : Checked _)
-  modifyState fun state => sszUpdate state with nextWithdrawalValidatorIndex := nextValidatorIndex
+  modifyState fun state => { state with nextWithdrawalValidatorIndex := nextValidatorIndex }
 ```
 
 The branch decides one value (`nextCursor`); the modulo and the write happen once
@@ -467,7 +467,7 @@ A port of the `process_pending_deposits` scan in `processPendingDeposits`
 -- before
         match validatorIndexByPubkey? state deposit.pubkey with
         | some vi =>
-          let validator := sszGet state validators[vi]!
+          let validator := state.validators[vi]!
           if validator.withdrawableEpoch < nextEpoch then
             applyPendingDeposit deposit; return cont processed postpone
           else if validator.exitEpoch < Const.farFutureEpoch then
@@ -497,7 +497,7 @@ that shape reads the validator once and writes the churn check once:
     let (isValidatorExited, isValidatorWithdrawn) :=
       match validatorIndexByPubkey? state deposit.pubkey with
       | some vi =>
-        let validator := sszGet state validators[vi]!
+        let validator := state.validators[vi]!
         (decide (validator.exitEpoch < Const.farFutureEpoch),
           decide (validator.withdrawableEpoch < nextEpoch))
       | none => (false, false)
