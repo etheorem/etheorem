@@ -8,7 +8,7 @@ change two pieces: `process_eth1_data_reset` is gone with the eth1 votes it rese
 `apply_pending_deposit` drops a deposit that would create a `0x00`-credential validator. Every
 other Gloas epoch substep and accessor is `inherit`ed here verbatim: each captured Gloas/Fulu `forkdef` (the DSL stores every
 `forkdef`'s source for inheritance; `SPEC_AUTHORING_MODEL.md` §8) re-elaborates in the Heze
-namespace against `Heze.State` (`= SSZ.Box _ Heze.BeaconState`), its sibling calls
+namespace against `Heze.State` (the plain `Heze.BeaconState`), its sibling calls
 rebinding to the Heze copies. The order matches Gloas's so each callee is declared before
 its caller.
 -/
