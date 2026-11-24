@@ -47,7 +47,7 @@ namespace EthCLSpecs.Proofs.Heze
 
 open EthCLLib.Proofs (ForkChoiceStoreRun run_bind run_pure except_bind_ok except_bind_error
   run_throw hsub_un_eq)
-open EthCLLib.Spec (HasherTag MapKind FcMap CLUint64 ExecutionEngine)
+open EthCLLib.Spec (MapKind FcMap CLUint64 ExecutionEngine)
 open EthCLSpecs.Heze (Preset Store Root Slot ExecutionPayload ExecutionRequests Transaction
   recordPayloadInclusionListSatisfaction getShufflingDependentRoot getInclusionListTransactions
   isInclusionListSatisfied computeEpochAtSlot)
@@ -76,7 +76,7 @@ at the previous slot's epoch: an error is returned unchanged, and a successful w
 stored under the walk's key, and keeps the walk's runner state. -/
 @[characterizes EthCLSpecs.Heze.recordPayloadInclusionListSatisfaction]
 theorem recordPayloadInclusionListSatisfaction_run
-    {map : MapKind} [Preset] [HasherTag] [FcMap map]
+    {map : MapKind} [Preset] [FcMap map]
     [ExecutionEngine ExecutionPayload Transaction ExecutionRequests] :
     ∀ (store runnerStore : Store map) (root : Root) (payload : ExecutionPayload),
       (recordPayloadInclusionListSatisfaction
@@ -136,7 +136,7 @@ slot before it, and the dependent-root walk has returned `dependentRoot` with ru
 
 The recorded result may be either `true` or `false`. -/
 theorem recordPayloadInclusionListSatisfaction_run_eq
-    {map : MapKind} [Preset] [HasherTag] [FcMap map]
+    {map : MapKind} [Preset] [FcMap map]
     [ExecutionEngine ExecutionPayload Transaction ExecutionRequests] :
     ∀ (store runnerStore postRunnerStore : Store map) (root : Root)
       (payload : ExecutionPayload) (block : EthCLSpecs.Heze.BeaconBlock) (slot : Slot)
@@ -167,7 +167,7 @@ theorem recordPayloadInclusionListSatisfaction_run_eq
 /-- A block missing from `store.blocks` is the `missingKey root` error: the spec's bare
 `store.blocks[root]` read. -/
 theorem recordPayloadInclusionListSatisfaction_run_error_of_missing_block
-    {map : MapKind} [Preset] [HasherTag] [FcMap map]
+    {map : MapKind} [Preset] [FcMap map]
     [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
     (store runnerStore : Store map) (root : Root) (payload : ExecutionPayload)
     (hblock : FcMap.lookup store.blocks root = none) :
@@ -181,7 +181,7 @@ theorem recordPayloadInclusionListSatisfaction_run_error_of_missing_block
 /-- Slot-zero checked-sub error: `store.blocks[root].slot - 1` underflows, and the range
 fault lands as the `.arithmetic` reject (the operator's payload, `-`). -/
 theorem recordPayloadInclusionListSatisfaction_run_error_of_slot_zero
-    {map : MapKind} [Preset] [HasherTag] [FcMap map]
+    {map : MapKind} [Preset] [FcMap map]
     [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
     (store runnerStore : Store map) (root : Root) (payload : ExecutionPayload)
     (block : EthCLSpecs.Heze.BeaconBlock)
@@ -198,7 +198,7 @@ theorem recordPayloadInclusionListSatisfaction_run_error_of_slot_zero
 
 /-- An error of the dependent-root walk at the previous slot `slot` is the recorder's error. -/
 theorem recordPayloadInclusionListSatisfaction_run_error_of_dependent_root
-    {map : MapKind} [Preset] [HasherTag] [FcMap map]
+    {map : MapKind} [Preset] [FcMap map]
     [ExecutionEngine ExecutionPayload Transaction ExecutionRequests]
     (store runnerStore : Store map) (root : Root) (payload : ExecutionPayload)
     (block : EthCLSpecs.Heze.BeaconBlock) (slot : Slot)
