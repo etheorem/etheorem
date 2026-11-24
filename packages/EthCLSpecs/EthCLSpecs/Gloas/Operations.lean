@@ -468,7 +468,7 @@ forkdef processAttestation (att : Attestation) (parentSlot : Slot) : StateTransi
   for vi in (← liftErr (getAttestingIndices state att)) do
     -- `vi` is a data-derived attesting-validator index; read the participation flag
     -- through `sszGetIdx` so an out-of-range index rejects with `outOfBounds` rather
-    -- than masking as a default flag (the matching `[i]!` writes are then in range).
+    -- than masking as a default flag (the matching `set!` writes are then in range).
     -- [New in Gloas:EIP7732] the flags this validator held before this attestation:
     -- `epoch_participation[index] == 0b0000_0000`, a total value comparison.
     let flags0 ← if currentTarget then sszGetIdx stateAcc.currentEpochParticipation vi

@@ -47,9 +47,7 @@ private def decodeState (P : Preset) (bytes : ByteArray) :
   | .ok state => .ok state
   | .error _  => .error (.decode "BeaconState")
 
-/-- `stateRoot`: decode a `BeaconState` and take its hash-tree-root through `htr`. The
-decoded value never escapes (the interface returns bytes), and no mutation happens between
-decode and root. -/
+/-- `stateRoot`: decode a Fulu `BeaconState` at preset `P` and take its root. -/
 private def stateRootImpl (P : Preset) (bytes : ByteArray) :
     Except (RunError StateTransitionError) ByteArray :=
   letI : Preset := P
