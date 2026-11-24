@@ -30,14 +30,24 @@ import SizzLean.Proofs.Merkle.Opening
 This file is the umbrella import. The re-exports above are the
 library's *public surface*, names a user is expected to write in
 their own code. They map one-to-one onto the sections of
-[`MANUAL.md`](../MANUAL.md):
+[`MANUAL.md`](../MANUAL.md).
+
+The plain surface comes first, and it is complete on its own. A user
+holds a plain `T` with `[SSZRepr T]`. Reads are field projections,
+writes are record updates, and the collection types add `set!`,
+`modify` and `push?`. `SSZ.serialize`, `SSZ.deserialize` and
+`SSZ.hashTreeRoot` are the wire format and the root. The `Cache/`
+modules are optional: they add the box and the cached Merkle tree
+for code that roots a large value many times.
 
 * `Repr/Class`, `Repr/Instances`, `Repr/Deriving`: the `SSZRepr`
-  class, the built-in field-type instances (`Bool`, `UIntN`,
-  `BitVec 128/256`, `Vector`, `SSZList`, `Bitvector`, `Bitlist`,
-  `ProgressiveList`, `ProgressiveBitlist`),
-  and the `deriving SSZRepr` handler (`@[sizzlean_progressive]`
-  emits a progressive container).
+  class with the `SSZ.serialize` / `SSZ.deserialize` /
+  `SSZ.hashTreeRoot` wrappers, the built-in field-type instances
+  (`Bool`, `UIntN`, `BitVec 128/256`, `Vector`, `SSZList`,
+  `Bitvector`, `Bitlist`, `ProgressiveList`, `ProgressiveBitlist`)
+  with their `set!` / `modify` / `push?` helpers, and the
+  `deriving SSZRepr` handler (`@[sizzlean_progressive]` emits a
+  progressive container).
 * `Spec/SSZError`: the deserialise-error sum returned by
   `SSZ.deserialize`.
 * `Hasher/Class`, `Hasher/Sha256`, `Hasher/Sha256Spec`: the
@@ -57,12 +67,14 @@ their own code. They map one-to-one onto the sections of
   reduce. The SizzLean-side trust-boundary inventory is recoverable
   via `grep -rEn '^axiom '` over `packages/SizzLean` (the `@[extern]`
   bindings live in `packages/hazmat/LeanHazmatSha256`).
-* `Cache/TreeBacked`: `CachedSSZ`, the cached-only one-flavour
-  type, with `CachedSSZ.ofValue` and `CachedSSZ.hashTreeRoot`.
-* `Cache/Box`: `SSZ.Box`, the closed union of cached + uncached
-  flavours, plus the four smart constructors `SSZ.FastBox`,
-  `SSZ.PureBox`, `SSZ.CachedBox`, `SSZ.UncachedBox`.
-* `Cache/Update`: the `sszUpdate` macro.
+* `Cache/TreeBacked` (optional, the cache-only mode): `CachedSSZ`,
+  the cached-only one-flavour type, with `CachedSSZ.ofValue` and
+  `CachedSSZ.hashTreeRoot`.
+* `Cache/Box` (optional, the box mode): `SSZ.Box`, the closed union
+  of cached + uncached flavours, plus the four smart constructors
+  `SSZ.FastBox`, `SSZ.PureBox`, `SSZ.CachedBox`, `SSZ.UncachedBox`.
+* `Cache/Update`: the `sszGet` / `sszUpdate` macros, the read and
+  write syntax of the two cache modes.
 
 Internal modules (the spec universe `SSZType` with its
 serialise/deserialise/hashTreeRoot operations, the proof artefacts
