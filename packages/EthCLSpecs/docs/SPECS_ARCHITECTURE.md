@@ -262,10 +262,11 @@ pure on that container, the ones taking the container and not the `State`.
 activation and exit epochs and needs nothing from the state. These pure
 predicates sit with the container they read.
 
-**State (row 19).** The `BeaconState` definition only, no operations. Field access
-is the framework's generic `sszGet` / `sszUpdate`, so there are no per-field
-accessors to colocate, and the file is just the field list under `forkcontainer`.
-It imports every container.
+**State (row 19).** The `BeaconState` definition only, no operations. A field read
+is a projection, `state.slot`, and a field write is a record update,
+`{ state with slot := s }`. So there are no per-field accessors to colocate. The
+file holds the field list under `forkcontainer` and the `state_preamble` line. It
+imports every container.
 
 **State operations (rows 20 to 35), by concern.** Any helper that takes the
 `State` cannot precede it, so it lives in a concern file that imports `State`.
@@ -379,8 +380,10 @@ packages/EthCLLib/
 ├── lakefile.toml
 ├── EthCLLib.lean                  # library root, re-exports
 ├── EthCLLib/                      # library source, the EthCLLib.* namespace
-│   ├── Forms/  Preset.lean  Monad.lean  Box.lean  Map.lean  Crypto.lean
-│   │   Arith.lean  Loop.lean  Interface.lean  PySpecTests.lean
+│   ├── Spec/                      # the DSL, the header macros, the state helpers, the seams
+│   ├── Proofs/                    # the generic proof toolkit (run facts, arithmetic laws)
+│   ├── PySpecTests/               # the fork interface and the vector driver
+│   ├── Internal/                  # capture and the `characterizes` attribute
 │   └── Tests/                     # the EthCLLib.Tests.* test library
 └── (umbrella; requires SizzLean, LeanHazmatBls, LeanHazmatKzg)
 
@@ -388,7 +391,8 @@ packages/EthCLSpecs/
 ├── lakefile.toml
 ├── EthCLSpecs.lean                # library root
 ├── EthCLSpecs/                    # library source, the EthCLSpecs.* namespace
-│   ├── Fulu/…   Gloas/…           # one directory per fork (Section 3.4)
+│   ├── Fulu/…  Gloas/…  Heze/…    # one directory per fork (Section 3.4)
+│   ├── Proofs/Fulu/…  Proofs/Gloas/…  Proofs/Heze/…   # one proof directory per fork
 │   ├── PySpecTests/Server.lean    # the runner exe, EthCLSpecs.PySpecTests.Server
 │   └── Tests/                     # the EthCLSpecs.Tests.* test library
 ├── PySpecTests/                   # the Python pytest-xdist harness (package-level)
@@ -501,42 +505,41 @@ and `computeDomain` take explicit arguments, read no `State`, and return a value
 They are callable anywhere, from a step or from another helper, and they reason
 cleanly in a later proof.
 
-An accessor that reads the `State` is a monadic action in `StateTransition`, not a
-pure function threaded with `(← get)`. `getCurrentEpoch` has type
-`StateTransition Epoch`.
+An accessor that reads the threaded `State` is a monadic action in
+`StateTransition`. `getCurrentEpoch` has type `StateTransition Epoch`.
 
 ```lean
-def getCurrentEpoch : StateTransition Epoch := do
+forkdef getCurrentEpoch : StateTransition Epoch := do
   let state ← get
-  return computeEpochAtSlot (sszGet state slot)
+  return computeEpochAtSlot state.slot
 ```
 
-The reason is grounded in how Lean reads a `get`-prefixed name, verified against
-the toolchain's standard library. A top-level `getX` reads as monadic in Lean:
+The reason is how Lean reads a `get`-prefixed name, checked against the
+toolchain's standard library. A top-level `getX` reads as monadic in Lean:
 `getEnv`, `getRef`, and `MonadState.get` are all monadic actions. A pure `get` is
 a dot-method on data: `List.get`, `Expr.getAppFn`. A pure top-level
-`getCurrentEpoch s` would read against that grain. And a field read is `sszGet`
-over the box regardless, so there is no plain projection left to keep pure. Making
-the state-reading layer monadic matches the language convention and keeps the
-field-read discipline uniform.
+`getCurrentEpoch s` would read against that grain.
 
 The `get` an accessor calls is the standard library's `MonadState.get`, the same
 `get` the contract's `State`-from-the-author's-view section shows. Monadic is
-introduced only where an accessor actually reads the state in the transition. The
-state-free helpers stay pure. A pure core like `State.currentEpoch` is extracted
-under a monadic accessor only where a deferred proof later needs the pure lemma.
-The practical effect: `get` itself nearly vanishes from spec bodies, because reads
-go through `sszGet` and the monadic accessors rather than an explicit
-`let state ← get` at every line.
+introduced only where an accessor reads the threaded state. The state-free
+helpers stay pure.
+
+The `State` is the plain `BeaconState` record, so a helper can also take the state
+as an explicit argument and stay pure. `currentEpochOf state` is the pure twin of
+`getCurrentEpoch`, for the `modifyState` and `Id.run` bodies of the epoch steps.
+`getDomain` (§8.1) and `verifyBlockSignature` take the state the same way. A step
+passes them `(← get)`, or the `state` it already bound.
 
 ### 5.2 Steps and the pipeline
 
 Mutating steps are likewise monad actions in `StateTransition`, written in a
 section opened by `state_section`. A step uses the closed set of primitives from
-the contract's step-writing-primitives section: `assert`, `sszGet`, `sszUpdate`,
-`modifyState`, `appendState` (the spec's `List.append` on a list field: it raises
-`.listFull` on a full list, over SizzLean's checked `SSZList.push?`), `setOrAppendState`
-(the spec's `set_or_append_list`), indexed access, and do-block sequencing.
+the contract's step-writing-primitives section: field projections and record
+updates, the collection writes `set!` and `modify`, `assert`, `modifyState`,
+`appendState` (the spec's `List.append` on a list field: it raises `.listFull` on a
+full list, over SizzLean's checked `SSZList.push?`), `setOrAppendState` (the spec's
+`set_or_append_list`), `getStateRoot`, indexed access, and do-block sequencing.
 
 The step-composition model is the same. A pipeline like `processBlock` or
 `processEpoch` is itself a `forkdef` whose do-block calls its sub-steps in order.
@@ -594,7 +597,7 @@ spec layer, so fork-invariant helpers are inherited per fork and fork-varying on
 are per-fork overrides or new declarations.
 
 The pyspec-to-Lean correspondence (a Python `assert` becomes the `assert` macro, an
-in-place `state.field = …` becomes `sszUpdate`) is evidence for these decisions,
+in-place `state.field = …` becomes a record update) is evidence for these decisions,
 not a thing the author transcribes mechanically. The behavioral-conformance freedom
 lets the Lean read naturally.
 
@@ -784,23 +787,22 @@ The crypto split of `FRAMEWORK_ARCHITECTURE.md`'s crypto layer puts the
 domain-agnostic mechanics in the framework and the consensus-aware part in the spec.
 This section is the spec side.
 
-### 8.1 `getDomain` is a monadic accessor
+### 8.1 `getDomain` is a pure function of the state
 
-The author writes `getDomain`, a monadic accessor by the state-reading rule of
-Section 5, because it reads `state.fork` and the genesis validators root. It selects
-the `DOMAIN_*` constant for the operation and delegates to the framework's pure
-`computeDomain`.
+The author writes `getDomain` (`Fulu/Signing.lean`). It reads the state's fork data
+and genesis validators root, so it takes the plain `State` as an argument (§5.1).
+It picks the fork version by epoch and delegates to the framework's pure
+`computeDomain`. The caller passes the `DOMAIN_*` constant and the epoch.
 
 ```lean
-def getDomain (domainType : DomainType) (epoch : Option Epoch)
-    : StateTransition Domain := do
-  let state ← get
-  let epoch := epoch.getD (← getCurrentEpoch)
-  let forkVersion := -- state.fork.previous or .current, by epoch
-    if epoch < sszGet state fork.epoch then sszGet state fork.previousVersion
-    else sszGet state fork.currentVersion
-  return computeDomain domainType (some forkVersion) (sszGet state genesisValidatorsRoot)
+forkdef getDomain (state : State) (domainType : ByteArray) (epoch : Epoch) : Vector UInt8 32 :=
+  let fk := state.forkData
+  let forkVersion := if epoch < fk.epoch then fk.previousVersion else fk.currentVersion
+  computeDomain domainType forkVersion state.genesisValidatorsRoot
 ```
+
+The pyspec's `epoch=None` default has no counterpart. Each call site names the epoch,
+for example `currentEpochOf state`.
 
 ### 8.2 The deposit exception
 
@@ -832,15 +834,21 @@ These deposit-signature checks branch instead of asserting. Gloas's
 
 ### 8.3 `verify` as a gate, `todo` for the unreachable
 
-The usual flow is `getDomain`, then `blsVerifySigned` asserted as the gate; it folds the
-framework's agnostic `computeSigningRoot` and the BLS verify into one call over the
-spec's SSZ-typed pubkey, object, domain, and signature.
+The usual flow is `getDomain`, then the framework's agnostic `computeSigningRoot`,
+then the BLS verify, with the result asserted as the gate. `verifyBlockSignature`
+is a pure check of the plain state, and `stateTransition` asserts it.
 
 ```lean
-forkdef verifyBlockSignature (block : SignedBeaconBlock) : StateTransition Unit := do
-  let domain ← getDomain Const.domainBeaconProposer none
-  let pubkey ← proposerPubkey block.message.proposerIndex
-  assert (blsVerifySigned pubkey block.message domain block.signature)   -- a gate
+forkdef verifyBlockSignature (state : State) (signedBlock : SignedBeaconBlock) : Bool :=
+  let block := signedBlock.message
+  match getAt state.validators block.proposerIndex with
+  | .error _ => false
+  | .ok proposer =>
+    let signingRoot := computeSigningRoot block (getDomain state Const.domainBeaconProposer (currentEpochOf state))
+    blsVerify proposer.pubkey signingRoot signedBlock.signature
+
+-- in `stateTransition`:
+  if validateResult then assert (verifyBlockSignature (← get) signedBlock)   -- a gate
 ```
 
 A crypto-dependent path that no in-scope vector reaches is a `todo`, the deferral
@@ -978,73 +986,58 @@ anti-patterns of that layer avoided in every definition.
 
 ### 11.1 Proofs run at the pure config only
 
-When proofs start, they run only at the pure configuration of the contract's
-one-spec-body-two-configurations duality: the pure box over the generic hasher
-tag (`SSZ.UncachedBox HasherTag.H`, uncached, so the
-getter-setter laws hold by `rfl`), the pure `StateTransition` monad (`StateT` over
-`Except`), and `treeMap` (clean insert and lookup laws, relevant only to fork-choice proofs, since
-the state-transition machine holds no map).
+Proofs run only at the pure configuration of the contract's
+one-spec-body-two-configurations duality: the pure `StateTransition` monad
+(`StateT` over `Except`) and `treeMap` (clean insert and lookup laws, relevant only to
+fork-choice proofs, since the state-transition machine holds no map). The state is the
+plain `BeaconState` in both configurations. Its field reads and record updates reduce
+by `rfl`, so a proof needs no getter-setter laws.
 
-The fast configuration (`FastBox`, `EStateM`, `hashMap`) is never a proof target.
-Conformance establishes it empirically. The fast-versus-pure gap is closed at the
-dependency level, not the spec level. SizzLean's cache-coherence test proves
-`FastBox` equals `PureBox` on the hash-tree-root, and the FFI-equivalence axioms
-handle the hasher, so there is no spec-level fast-equals-pure theorem to prove. The
-specs inherit the gap-closing from the dependency.
+The fast configuration (`EStateM`, `hashMap`) is never a proof target. Conformance
+establishes it empirically. The two configurations thread the same state type, so the
+state adds no gap between them. The FFI-equivalence axioms handle the hasher (§11.2).
+There is no spec-level fast-equals-pure theorem.
 
-Both machines are pinned this way. `Proofs/Gloas/Run.lean` names the pure monad for the state
-machine; `Proofs/Gloas/ForkChoiceRun.lean` names it for the store machine and proves a
+Both machines are pinned this way. `Proofs/Fulu/Run.lean` and `Proofs/Gloas/Run.lean`
+name the pure monad for the state machine (`FuluRun`, `GloasRun`).
+`Proofs/Gloas/ForkChoiceRun.lean` names it for the store machine and proves a
 fork-choice `forkdef` at it. A handler that runs the state machine picks up its nested
 monad from `NestedStateMachine` (`FRAMEWORK_ARCHITECTURE.md` §7.2), keyed on the store's
-own monad, so pinning the pure store monad pins the pure state monad with it and no fast
+own monad. So pinning the pure store monad pins the pure state monad with it, and no fast
 configuration reaches a fork-choice proof.
 
 #### 11.1.1 Statements bind plain values
 
-A fork-body theorem states its claim over plain values. It binds a plain
-`BeaconState`, never a boxed `State`, and it reads fields directly, `state.slot`
-rather than `sszGet state slot`. A theorem about a step names the input value
-`preState` and the result value `postState`. A theorem that only reads the value
-names it `state`. A successful run states its result as one whole value, not
-field by field, since two boxes that carry the same value can still differ.
+A fork-body theorem binds a plain `BeaconState` and reads fields directly,
+`state.slot`. A theorem about a step names the input value `preState` and the result
+value `postState`. A theorem that only reads the value names it `state`.
 
-The box lives in two helpers, `pureState` and `runPure`
-(`EthCLLib/Proofs/Run.lean`, the framework's generic proof toolkit). `pureState state`
-is the uncached box of `state`, and it
-is the only box constructor a statement names. `runPure act preState` runs a step on
-that box and reads the post-state's value. A contract theorem states the run at
-the box, `act.run (pureState preState) = .ok (a, pureState postState)`, because that `.run`
-shape is what the fork-choice bridge consumes. A reading theorem states the
-`runPure` form, `runPure act preState = .ok (a, postState)`, which `runPure_of_run_ok` derives
-from the contract. The hasher stays generic (`[HasherTag]`); §11.2 says when a
-goal pins it.
+A theorem states a run with `.run` at the fork's pure runner:
 
-The box is the one axis no type pins, so a check pins it.
-`scripts/ProofCoverage.lean` walks every theorem under `EthCLSpecs.Proofs`
-whose statement names a fork constant, and a statement that quantifies over
-the box fails the run. `just proof-coverage-check` is the command CI runs,
-and `just proof-coverage` prints the findings.
+```lean
+(act (StateTransition := GloasRun)).run preState = .ok (a, postState)
+```
 
-A theorem that must quantify over the box carries `@[box_generic "reason"]`,
-and the check accepts it. Two theorem kinds justify the marker. The first is a
-fact about the box itself, such as a lemma that relates a run on a cached box
-to a run on `pureState preState`; such a lemma is the seed of a future cached ≡ pure
-equivalence, and it cannot avoid a `Box` binder. The second is a fact that
-holds for any flavour at no extra cost, where the author wants the stronger
-claim on purpose. The check rejects a marked theorem that binds no box, the
-report lists every marker with its reason, and the baseline records markers by
-name, so a new marker reaches the reviewer as a baseline diff. A reviewer
-rejects a reason that names neither kind.
+The success case gives the post-state as one whole value, often a record update of
+`preState`. A reject reads `.error e` and carries no state. The `.run` form is the shape
+the fork-choice bridge consumes: `runNestedStateTransition_of_ok`
+(`EthCLLib/Spec/NestedMachine.lean`) takes a step's `.run` fact and returns the
+store-machine statement. The run facts every proof rewrites with (`run_bind`,
+`run_pure`, `run_throw` and the others) live in `EthCLLib/Proofs/Run.lean`, at any
+state and error type. A pure helper of the state needs no runner. Its theorem is an
+equation on values, as `modBalance_eq` (`Proofs/Fulu/Balances.lean`) shows.
+
+The hasher stays generic (`[HasherTag]`); §11.2 says when a goal pins it.
 
 ### 11.2 The hasher is per goal
 
-The hasher is a per-goal axis, not a fast-versus-pure bundle. Symbolic
+The hasher is a per-goal axis, separate from the fast-versus-pure bundle. Symbolic
 state-transition proofs use the opaque `Sha256` directly: equality of two roots
 follows from the same hash over the same buffers, axiom-free, the first hasher case
 of the project's proof discipline. Only a goal that needs a hash's concrete bytes
 swaps to `Sha256Spec` (the kernel-reducible case) or invokes the named
 FFI-equivalence axioms (the symbolic-then-computational case). The proof picks the
-hasher by what the goal needs, independent of the box flavour and the monad.
+hasher by what the goal needs, independent of the monad.
 
 ### 11.3 The techniques and the candidate theorems
 
