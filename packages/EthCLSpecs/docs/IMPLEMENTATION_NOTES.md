@@ -243,8 +243,10 @@ Each has a refuting pin over the branch no vector reaches: `pinRecordRefuted`
 
 ## State, presets, and the header macro
 
-`State` is the boxed `SSZ.Box _ BeaconState`. Hashing runs through the `[HasherTag]`
-seam (`sha`). The `Preset` / `Config` / `Const` three-tier constant system carries the
+`State` is the fork's plain `BeaconState` record. A read is a projection and a write is a
+record update. The type carries no hasher. A declaration that hashes (`htr`, `sha`,
+`getStateRoot`) takes the `[HasherTag]` seam, and one that never hashes takes no tag.
+The `Preset` / `Config` / `Const` three-tier constant system carries the
 per-fork values; the fork interfaces are preset-parameterized (`fuluInterfaceFor (P :
 Preset) (C : Config)`, `gloasInterfaceFor (P) (C) (forkVersion)`) so `minimal` and
 `mainnet` instances coexist (the preset is a parameter, not a global instance), and the
@@ -253,7 +255,8 @@ runner selects fork × preset (`pyspec_server [fork] [preset]`).
 - **The section header is two macros: `state_preamble` declares, `state_section` opens.**
   The split follows the seam that declarations persist across modules while `variable`s
   do not. `state_preamble BeaconState` runs once in the `State` module and declares
-  `abbrev State` plus the concrete-domain `modifyState` (`State → State`); `state_section`
+  `abbrev State [Preset] : Type := BeaconState` plus the concrete-domain `modifyState`
+  (`State → State`); `state_section`
   opens each operation file's `section` and re-establishes the
   `[Preset] [HasherTag] [Config] [CryptoBackend]` selectors plus the monad /
   `MonadStateOf` / `MonadExceptOf` line (`[Config]` / `[CryptoBackend]` are
@@ -265,14 +268,18 @@ runner selects fork × preset (`pyspec_server [fork] [preset]`).
 - **`modifyState` carries no binder annotation.** Its concrete `State → State` domain (the
   preamble emits it per fork, since `State` is per-fork) flows the expected type into a
   step's lambda, so `modifyState fun state => …` types `state : State` with no
-  `(state : State)`. A generic framework `modifyState` could not do this: its `S` would
-  be a metavariable when the `sszUpdate` macro in the body fires.
+  `(state : State)`. A generic framework `modifyState` could not do this. Its `S` would
+  still be a metavariable when the body's `{ state with … }` elaborates, and the
+  structure-instance notation needs to know the structure type.
 
 ## State access, indexing, and the error model
 
-Reads and writes go through `sszGet` / `sszUpdate`. The index accessor is chosen by two
-questions: is the index _data-derived_ (supplied by a data field and not otherwise bounded),
-and is a reject channel in scope (a monadic step or an `Except` query) at the read.
+A step reads a field as `state.f` and writes it with the record update
+`{ state with f := v }`. An element write goes through the field's own `set!` or
+`modify` (`{ state with validators := state.validators.modify i f }`). The index
+accessor is chosen by two questions: is the index _data-derived_ (supplied by a data
+field and not otherwise bounded), and is a reject channel in scope (a monadic step or
+an `Except` query) at the read.
 
 - **A data-derived index with a reject channel** uses `sszGetIdx` / `bitlistGetIdx`
   (`Spec/State.lean`), which build an `Except IndexError` and hand it to `liftErr`,
@@ -349,41 +356,30 @@ method leaves decoding and runs spec code. This removed the old decode hacks (th
 fork-choice anchor path), so a decode failure is named for what it is and never masquerades
 as a consensus reject.
 
-**Element writes: infallible `[i]!` vs checked `[i]`.** SizzLean's `sszUpdate` element
-index comes in two forms. The checked `field[i] := v` is _fallible_ (`Except
-IndexError`, matching the pyspec's `IndexError`), for a write that should reject an
-out-of-range index. The bang `field[i]! := v` is _total_: it returns the bare `State`,
-an out-of-range write being a silent no-op that mirrors `Array.set!`, and it emits the
-same spine address and root as the checked form. The reset / caching writes
-(`process_slot`'s root caching, the slashings / randao resets, the builder-payment
-slots) key an index that is in range by construction (`idx = … % VECTOR_LENGTH`), so
-they use `field[i]!`: total (it fits the `modifyState fun state => State` contexts with
-no reject path) and, for the composite-element fields (`Vector Bytes32`, the
-builder-payment vector), the cached O(log n) single-leaf update rather than an O(field)
-rebuild. Both forms work over a preset-resolved (symbolic) cap (the derive's
-`capToShapeSyntax` mirror in SizzLean).
+**Element writes: total `set!` and `modify`, checked `setAt`.** The total writes are
+`set!` and `modify`, which the field's collection type supplies: an out-of-range index
+leaves the collection unchanged, as `Array.set!` does. `modify` applies a function to the
+element in place, so a validator update copies no record. The checked write is `setAt`
+(`Spec/State.lean`). It returns `Except IndexError`, which `liftErr` turns into
+`outOfBounds`, the class of the pyspec's `IndexError`. The reset and caching writes
+(`process_slot`'s root caching, the slashings and randao resets, the builder-payment
+slots) key an index that is in range by construction (`idx = … % VECTOR_LENGTH`). So they
+use `set!`, which fits a `modifyState fun state => …` body with no reject path. The reward
+and penalty delta helpers write their arrays through `setAt`, beside their `getAt` reads.
+`setOrAppendState` (`Spec/Header.lean`) is the spec's `set_or_append_list`: inside the
+list it writes with `set!`, at the end it appends, and past the end it rejects with
+`outOfBounds`.
 
-**Root caching: `getStateRoot` threads the warm box.** `Box.hashTreeRoot` returns
-`(root, warm-box)`, the warm box holding the committed intermediate-node tree, so taking
-a root is `modifyGet`-shaped. `getStateRoot` (`Spec/State.lean`) is the primitive that
-encapsulates it: it reads the boxed state, takes the root, and writes the warm box back
-through `MonadState`, so a later root reuses the tree instead of rebuilding it. It pins
-the state type `S` from the section's `MonadState S m` (the state type is an `outParam`),
-then recovers the box through the `StateRoot` class, so the box's hasher and value type
-need not be inferred as metavariables. The `state_transition` spine and the monadic
-interface folds call it. The non-monadic sites use the pure `stateRoot` (root plus warm
-box, `Spec/State.lean`), which keeps spec bodies off `Box.hashTreeRoot`: `process_slot`
-calls it inside its `Id.run` block, since it needs both halves while it keeps mutating.
-The pure `stateRoot!` (`Spec/State.lean`) is the discard
-form, its `!` marking that it drops the warm box (the convenient-but-lossy variant, like
-`Array.get!`). It is reserved for the terminal `Interface` sites, where the root is the
-function's return value and the box dies with the call. Whether retention actually caches
-is the box flavour's call (a cached box keeps the tree, a pure box does not), so the spec
-threads unconditionally and the runner picks the flavour. Memory: the warm tree scales with state size, so at mainnet under high
-`pytest-xdist` parallelism the retained trees can exhaust memory and crash workers; the
-runner caps `-n` accordingly (mainnet runs at `-n 4`, Gloas mainnet at `-n 2`, until
-per-test cleanup lands). That is a runner concern, not a reason to drop the threading
-from the spec.
+**State roots: `getStateRoot` and `htr`.** `getStateRoot` (`Spec/State.lean`) is the one
+read of the threaded state's root inside a step. It pins the state type `S` from the
+section's `MonadState S m` (the state type is an `outParam`), so instance search finds the
+record's `SSZRepr` with no metavariable left open. `process_slot` and `state_transition`
+call it. A state held as a value is rooted with `htr`, as any container is: the Gloas
+payload-envelope check and the fork-choice anchor do this. The runner entry points end with
+`runToRoot` (`Spec/RunState.lean`), which runs the action and roots the post-state. Each
+root is a full merkleization of the plain record through `SSZ.hashTreeRoot`, because the
+plain state carries no Merkle tree. So a slot costs one full `BeaconState` root at the
+mainnet preset. The cost record at the end of this file has the numbers.
 
 `CaseRequest` renames the pyspec metadata field to `caseMeta`, since `meta` is a
 section-modifier keyword that fails to project.
@@ -407,10 +403,11 @@ Spec bodies carry a single `open EthCLLib.Spec`. The module re-exports the SSZ
 collection vocabulary (`export SizzLean.Repr (SSZList Bitvector Bitlist)`, plus the
 byte / collection / hasher helpers), so a pure spec body needs nothing more (Gloas adds
 `open EthCLSpecs.Fulu` for the shared constants and primitive aliases; its component
-_types_ are inherited into the Gloas namespace, not opened from Fulu). The residual `open SizzLean.Cache` /
-`Hasher` survive only in the interface / fork-choice / upgrade glue, which name the box
-representation (`SSZ.Box` / `Sha256` / `HasherTag`) directly; re-exporting those into
-the author surface would defeat the `sszGet` / `sszUpdate` encapsulation.
+_types_ are inherited into the Gloas namespace, not opened from Fulu). The interface,
+fork-choice and Gloas upgrade glue also open `SizzLean`, `SizzLean.Cache` or
+`SizzLean.Hasher`. The glue names the concrete hasher (`Sha256`) and the codec entry points
+directly. No spec body needs these opens: the state is the plain record, and a field read
+or write is ordinary Lean.
 
 ## Module layout
 
@@ -420,10 +417,11 @@ author surface under `EthCLLib/Spec/` (`Arith`, `Assert`, `Crypto`, `Errors`,
 `FiniteMap`, `Forms`, `Hasher`, `Header`, `Loop`, `SigningRoot`, `State`, aggregated by
 `Spec.lean`), the pyspec driver under `EthCLLib/PySpecTests/` (`Driver`,
 `Interface`), and the capture base under `EthCLLib/Internal/` (`Capture`). The §3.6
-concerns map on: `Preset` / `Monad` / `Box` → `Spec.State` + `Spec.Header`; `Map` →
+concerns map on: `Preset` / `Monad` → `Spec.State` + `Spec.Header`; `Map` →
 `Spec.FiniteMap`; `Crypto` / `Arith` / `Loop` → the same-named `Spec.*`; `Interface` /
 `PySpecTests` → `PySpecTests.Interface` + `PySpecTests.Driver`. The names `FiniteMap` /
 `Errors` / `Header` read better than the sketch, so §3.6 is reconciled by this mapping.
+The state is the plain `BeaconState`, so no module holds a state representation.
 
 `Spec.Arith` carries `umax` / `umin` / `isqrt`, type-directed `uintToBytes`, byte
 conversions, `vget`, `vecSliceEq` (fixed-window byte-slice equality), `vmodGet`
@@ -433,19 +431,21 @@ conversions, `vget`, `vecSliceEq` (fixed-window byte-slice equality), `vmodGet`
 helpers `CLUint8.hasFlag` / `addFlag`, which return `Checked`), `Spec.CLInt`,
 `Spec.CLTotal`, and the scoped elaborator `Spec.Elab` (`FRAMEWORK_ARCHITECTURE.md` §10).
 The append lives in SizzLean: `SSZList.push` takes a proof
-that the list has room, and `SSZList.push?` / `sszAppend?` return `none` on a full list.
+that the list has room, and `SSZList.push?` returns `none` on a full list.
 `appendState` (`Spec.Header`) turns that `none` into the `.listFull` fault, the spec's
 `List.append` raise, and `setOrAppendState` models `set_or_append_list` on top of it.
 `sszOfArray` takes a proof that its array fits. `sszOfArrayM` (`Spec.Header`) is the
 spec's `List[T, N](a)` for an array of any size: it raises `.listFull` on too many
 elements, over SizzLean's `SSZList.ofArray?`. `Spec.State`
-carries `getStateRoot` / `stateRoot` / `stateRoot!`. `Spec.RunState` carries
+carries `getStateRoot`, the index-error lift, and the indexing layer (`ToIndex`, `getAt`,
+`setAt`, `sszGetIdx`). `Spec.RunState` carries
 `MonadRunState`, the class saying a state-machine monad can be run from a starting state,
-and `runToRoot` (run a boxed-state action to its post-root, generic over that class, the
-state-machine twin of `runOn`). `Spec.NestedMachine` carries `NestedStateMachine` and the
-`runNestedStateTransition` / `evalNestedStateTransition` bridges. `Spec.SigningRoot` carries
-`htr`, `computeForkDataRoot`, `computeDomain`, `computeSigningRoot`, `isValidMerkleBranch`,
-and the signing-root verify combinator `blsVerifySigned`, over `[HasherTag]`. `Spec.Loop`
+and `runToRoot` (run an action from a plain state to its post-state root, generic over
+that class, the state-machine twin of `runOn`). `Spec.NestedMachine` carries
+`NestedStateMachine` and the `runNestedStateTransition` / `evalNestedStateTransition`
+bridges. `Spec.SigningRoot` carries `htr`, `computeForkDataRoot`, `computeDomain`,
+`computeSigningRoot`, `isValidMerkleBranch`, and the signing-root verify combinator
+`blsVerifySigned`, over `[HasherTag]`. `Spec.Loop`
 carries `Step` / `fuelLoop` / `fuelIterateM` / `fuelIterateM!`. `Spec.FiniteMap` carries
 `MapKind`, `FcMap` (with `lookupD` / `getOrThrow` / `getOrThrowKey` / `values` /
 `filterKeys`), `treeMap`, `hashMap`, and `Hashable (Vector …)`.
@@ -594,7 +594,7 @@ validator sweep) and `process_withdrawals`. `Fulu/EpochProcessing.lean` holds ev
 `process_epoch` substep; `Fulu/Committees.lean` holds the swap-or-not shuffle and
 everything built on it (`get_seed`, `compute_committee` / `get_beacon_committee`, the
 balance-weighted sampler, `compute_proposer_indices` / `get_beacon_proposer_indices`,
-`get_next_sync_committee`), pure functions of the boxed state. `getBeaconProposerIndex`
+`get_next_sync_committee`), pure functions of the plain state. `getBeaconProposerIndex`
 reads the precomputed `proposerLookahead` (Fulu EIP-7917), so the proposer needs no
 runtime shuffle; only committees and building the lookahead / sync committee do.
 
@@ -714,8 +714,8 @@ travel with that switch:
 `upgradeToGloas` copies the carried-over fields and initializes the ePBS fields, the
 cached bid as a self-build bid for the pre-state's latest block (`parent_block_hash`,
 `parent_block_root`, `prev_randao`, `slot`, and `BUILDER_INDEX_SELF_BUILD`, filled at
-v1.7.0-beta.4) and the PTC window zeroed. `completeUpgradeToGloas` then runs on the boxed
-post-state: it fills `ptc_window` with `initialize_ptc_window(post)`, Gloas's own
+v1.7.0-beta.4) and the PTC window zeroed. `completeUpgradeToGloas` then runs on the plain
+Gloas post-state: it fills `ptc_window` with `initialize_ptc_window(post)`, Gloas's own
 `compute_ptc` over the Gloas state (beta.4; alpha.12 computed it over the Fulu pre-state),
 and onboards builders from the pending-deposit queue
 (`onboard_builders_from_pending_deposits`). The split follows the spec, which builds the
@@ -1037,10 +1037,12 @@ separation.
   `def` over the Fulu pre-state, outside the coverage denominator.
 
 - **`Proofs/Gloas/InitiateBuilderExit.lean`** gives the whole-transition
-  `initiateBuilderExit_run_eq` contract at the box. An out-of-range builder index
-  raises `outOfBounds`. An in-range index reaches the checked epoch-plus-delay add.
-  An addition fault propagates. A successful addition writes the builder through
-  `ProgressiveList.set!` and returns the updated pure box. The success theorem
+  `initiateBuilderExit_run_eq` contract, a `.run` on a plain `BeaconState`. An
+  out-of-range builder index raises `outOfBounds`. An in-range index reaches the checked
+  epoch-plus-delay add. An addition fault propagates. A successful addition writes the
+  builder through `ProgressiveList.set!` and returns the updated plain state. The body
+  writes with `ProgressiveList.modify`, and `progressiveListModify_eq_set!` (SizzLean)
+  restates that write as `set!`. The success theorem
   requires both the in-range index and the sum bound. The shipped minimal and
   mainnet corollaries discharge the sum bound and keep the in-range index premise.
 
@@ -1049,15 +1051,11 @@ separation.
   `Except` facts every pure runner rewrites with (`run_bind`, `run_pure`,
   `run_throw`, `except_bind_ok`, `except_bind_error`). They are stated at an
   arbitrary state and error type, so they apply to `GloasRun` and
-  `ForkChoiceStoreRun`. The same module pins the box:
-  `pureState v` is the uncached box of the plain value, `runPure act v` runs an
-  action on it and returns the result as a value. A contract theorem states the
-  run at the box level, `act.run (pureState v) = .ok (a, pureState w)`, which
-  the nested-machine bridge consumes by application, and `runPure_of_run_ok`
-  derives the `runPure` form from it. `runPure_eq`, `runPure_pure`,
-  `runPure_throw` are the remaining `rfl` facts proofs rewrite with. There is
-  no `runPure_bind`: a bind law would have to know every intermediate box is
-  uncached, so a composite body goes through `runPure_eq` to the box level.
+  `ForkChoiceStoreRun`. The module also holds `run_getThe`, `ite_bind`, the two
+  explicit-throw equations, and the `liftErr` / `ofExcept` run facts. The fork `State`
+  is the plain `BeaconState`, so a contract theorem binds a plain value and states the
+  run as `act.run v = .ok (a, w)`. The nested-machine bridge consumes that same equation
+  by application, and `run_bind` splits a composite body at each bind.
   The module lives in the framework's generic proof toolkit,
   because the facts belong to no fork.
 
@@ -1088,11 +1086,10 @@ separation.
   `EthCLSpecs.Proofs.Gloas`. It characterizes Gloas `processOperations` at
   `GloasRun`; handlers and later failure postconditions remain opaque. Every
   statement takes the beta.4 `parentSlot` argument, and the attestation fold is
-  `processAttestation · parentSlot`. The `KeepsUncached` facts behind its split
-  (`Proofs/Gloas/KeepsUncached.lean`) cover the beta.4 bodies: `slashValidator`'s
-  payment loop through `pureState_forIn_range_id`, and `processAttestation`'s
-  `had_no_participation` read through `keepsUncached_sszGetIdx` and `ite_bind`
-  (`EthCLLib/Proofs/KeepsUncached.lean`, `EthCLLib/Proofs/Run.lean`).
+  `processAttestation · parentSlot`. The success characterization splits over five
+  plain intermediate states, one per operation-family loop, with `run_bind`
+  (`EthCLLib/Proofs/Run.lean`). Each loop's post-state is already a plain value, so the
+  split needs no fact about the handler bodies.
 
 - **`EthCLLib/Proofs/LawfulFcMap.lean`** places its public declarations in
   `EthCLLib.Proofs`. It defines the key-indexed `LawfulFcMap map K` interface
@@ -1497,7 +1494,8 @@ the Epic Lead can sequence them without losing the original findings.
    `CLAUDE.md` omits LeanRlp from its package list. `docs/monorepo-arch.md` understates
    the document set. SizzLean's plan/README carry old C-shim paths, its architecture
    omits Heze from the container list, and SizzLean/hazmat carry old fork ranges.
-   The Gloas proof index reaches `KeepsUncached` transitively. Generated coverage
+   The Gloas proof index reached a framework proof module transitively; the
+   *Plain-value state record* below lists that module as deleted. Generated coverage
    blocks stay owned by `proof-coverage-update`. These are the reported link/status
    observations; 9.4 must check their current disposition before editing.
 2. **R2, non-arithmetic prose, Epic Lead.** The family hand-offs explicitly left
@@ -1510,8 +1508,9 @@ the Epic Lead can sequence them without losing the original findings.
    containers, fork choice, and signing. Root coding style §6 retains deposit-scan
    history. The "ride" wording that X13 fixed at the eight WS-100 sites remains
    outside them in `EthCLLib/Tests/CLAuthoring.lean:250`, `EthCLLib/Tests/TierMerge.lean:12`,
-   `EthCLLib/Tests/ForkScoping.lean:25`, `EthCLLib/Proofs/KeepsUncached.lean:612`,
-   `EthCLSpecs/Forms.lean:28`, `EthCLSpecs/Fulu/Transition.lean:122`,
+   `EthCLLib/Tests/ForkScoping.lean:25`, line 612 of a framework proof module that the
+   *Plain-value state record* lists as deleted, `EthCLSpecs/Forms.lean:28`,
+   `EthCLSpecs/Fulu/Transition.lean:122`,
    `EthCLSpecs/Gloas/Upgrade.lean:86`, `EthCLSpecs/Heze/Upgrade.lean:93`,
    `EthCLSpecs/Heze/Fork.lean:12`, `EthCLSpecs/Gloas/ForkChoice.lean:872`, and
    `EthCLSpecs/Heze/ForkChoice.lean:392`. These passages
@@ -2008,7 +2007,8 @@ The next longest job takes 8.4s (`EthCLSpecs.Proofs.Gloas.BuilderPendingPayments
 
 The transition added `set_option maxHeartbeats` where elaboration needed more time.
 There are nine at 1000000 in the `Interface` modules (one Fulu, four Gloas, four Heze),
-and two at 4000000 in `Proofs/Gloas/KeepsUncached.lean`. The pre-transition tree had
+and two at 4000000 in a Gloas proof module that the *Plain-value state record* lists as
+deleted. The pre-transition tree had
 none in `EthCLSpecs`. At Stage 3.1, before any fork body used the elaborator, a cold
 `EthCLLib` build with its tests took 49.7s over 303 jobs. The incremental chain took 1.4s.
 
@@ -2160,3 +2160,115 @@ tracking, apart from the completion record above.
 4. **Stage 9 routes R2 and R3.** The non-arithmetic historical prose and the policy for
    tracker IDs in the committed record stay with the Epic Lead. The Stage 9 audit
    record above lists their sites. Status: open.
+
+## Plain-value state record
+
+This record is the one account of the change that took the fork bodies off SizzLean's
+`SSZ.Box`. The sections above describe the result. The change left every vector answer
+and every `@[characterizes]` claim as it was.
+
+### What changed
+
+Before the change, each fork's `State` was `SSZ.Box H BeaconState`. The runner held a
+cached box (`FastBox`), and the proofs held an uncached box (`PureBox`, `UncachedSSZ`). A
+step read and wrote through the SizzLean macros `sszGet`, `sszUpdate`, `sszModify` and
+`sszAppend?`. A root came from the `StateRoot` class through `stateRoot` / `stateRoot!`,
+which returned the root with a warm box that kept the Merkle tree.
+
+Now the `State` of Fulu, Gloas and Heze is the plain `BeaconState`:
+
+- `state_preamble` declares `abbrev State [Preset] : Type := BeaconState`, with no
+  `[HasherTag]` binder. A declaration takes `[HasherTag]` only when it hashes.
+- The fork bodies use native spelling: `state.f` reads, `{ state with f := v }` writes, and
+  `set!` / `modify` element writes. `sszModify` became the collection's `modify`, which
+  SizzLean adds for `SSZList`, `ProgressiveList` and `Vector`.
+- `getStateRoot` is the one root read of the threaded state. A held state is rooted with
+  `htr`. `runToRoot` roots the post-state at the runner. Each root is a full
+  merkleization.
+- `verifyExecutionPayloadEnvelope` returns `Unit`, as in the pyspec. The Gloas and Heze
+  payload-envelope handlers leave `blockStates` unchanged.
+- The runner decodes with `SSZ.deserialize` and runs the plain state in `EStateM`.
+
+SizzLean keeps the box, the cache layer and all of their macros. The CL specs import no
+box type. Four files left the tree: `EthCLLib/Internal/BoxBinders.lean`,
+`EthCLLib/Proofs/KeepsUncached.lean`, `EthCLSpecs/Proofs/Gloas/KeepsUncached.lean` and
+`EthCLSpecs/Tests/BoxBinderPins.lean`.
+
+### The proof layer has no box bridge
+
+The proofs used to state a run on `pureState v`, the uncached box of a plain value, and
+read it back through `runPure`. The `KeepsUncached` facts showed that a body kept the box
+uncached, and `@[box_generic]` marked a theorem stated over the box. All of these are
+gone. A theorem binds `v : BeaconState` and states the run as `act.run v`. `run_bind`
+(`EthCLLib/Proofs/Run.lean`) splits a composite body, because every intermediate state is
+already a plain value.
+
+Proof coverage at the base (`d370c426`) and after the change:
+
+| Number | Base | After |
+|---|---:|---:|
+| Claims, both baselines | 87 | 70 |
+| Characterized (`tier2`) | 19 | 19, the same set |
+| `tier1` lines | 44 | 31 |
+| `box_generic` lines | 4 | 0 |
+| SSZ lines | 20 | 20 |
+| Touched: Fulu, Gloas, Heze | 3, 41, 19 | 3, 28, 19 |
+
+The 17 lines that went are the 4 `box_generic` lines and 13 `tier1` lines. Each of those
+13 declarations was touched only by a lemma of the deleted
+`Proofs/Gloas/KeepsUncached.lean`.
+
+### Costs
+
+One machine ran every measurement: 12th Gen Intel Core i5-12400F, 12 threads, 31 GiB.
+The sweeps ran with pytest `-n 6` and `--subset=0` on the `v1.7.0-beta.4` vectors. The
+base column is the stage 0 baseline on `d370c426`. The plain column is the Stage 5 gate,
+the first full matrix with every fork on the plain state. Task 10.3 fills the final column
+from the measurements of task 10.2.
+
+| Measurement | Base | Plain, Stage 5 gate | Final |
+|---|---:|---:|---:|
+| Full matrix, both presets, wall | 4524.0 s | 5475.1 s | pending |
+| Mainnet Fulu, wall | 155.27 s | 1674.37 s | pending |
+| Mainnet Gloas, wall | 2100.50 s | 1865.88 s | pending |
+| Mainnet Heze, wall | 2068.69 s | 1704.63 s | pending |
+| Minimal Fulu, wall | 23.40 s | 33.69 s | pending |
+| Minimal Gloas, wall | 88.03 s | 100.43 s | pending |
+| Minimal Heze, wall | 88.15 s | 96.09 s | pending |
+| Fulu `historical_accumulator` | 72.69 s | 1464.04 s | pending |
+| Gloas `historical_accumulator` | 1830.16 s | 1632.49 s | pending |
+| Heze `historical_accumulator` | 1906.84 s | 1570.79 s | pending |
+| Mainnet state root, one write then a root | 9.8 ms cached, 163.0 ms uncached | | pending |
+| `lake clean && lake build EthCLSpecs` | 25m03.5s | | pending |
+
+Two other builds shared the machine during the Stage 5 minimal sweeps, so those three
+walls carry more noise than the band of about 3% seen at the base. The root row is
+CompBench `update1` (`just sizzlean-comp-benchmark`), mean of 100 runs.
+
+`historical_accumulator` advances 8,192 slots and sets each mainnet wall. Each slot now
+pays one full `BeaconState` root: 179 ms at Fulu, 199 ms at Gloas, 192 ms at Heze. The
+mitigations considered, a root memo at the fork-choice store and a runner-side Merkle
+cache, are not built. The cost did not block the change.
+
+### Pilot findings that still apply
+
+Heze switched first, as the pilot. These findings hold for the tree after the change.
+
+- **No fork body needed an edit to run on the plain state.** Every Heze body, the
+  inherited Fulu and Gloas text included, elaborated on the plain record unchanged.
+- **The box cost depended on the container kind.** The Gloas and Heze `BeaconState` is a
+  progressive container (EIP-7688). The cache layer rebuilt it in full on each commit,
+  about 195 ms a slot. A plain root costs about 157 ms, so Gloas and Heze run faster on
+  the plain state. The Fulu `BeaconState` is a classic container, and the cached box
+  rehashed only the changed spine, about 0.1 ms a slot. Fulu now pays a full root per
+  slot, which explains its mainnet growth.
+- **Write loops run faster on the plain state.** At the mainnet preset, Heze
+  `epoch_processing/pending_deposits` took 0.83 times its base time,
+  `operations/attestation` 0.89 times and `operations/withdrawals` 0.90 times.
+- **`modify` costs a closure call unless it is inlined.** A bench of the `SSZList` and
+  `Vector` wrapper bodies, called from a second module, measured the plain `def` at 37%
+  above `set!` of `get!` over a million validators. The `@[inline]` copy matched `set!`.
+  The three SizzLean `modify` definitions carry no `@[inline]`.
+- **Proof repair followed four patterns.** Pass the state where the statement passed the
+  box. Drop the box imports and opens. Rename each lemma whose name named the box. Keep
+  each `@[characterizes]` statement byte for byte.
