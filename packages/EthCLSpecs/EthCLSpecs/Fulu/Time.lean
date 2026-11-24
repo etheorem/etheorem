@@ -7,7 +7,7 @@ The time-domain helpers (`SPECS_ARCHITECTURE.md` §3.1 row 20). State-free
 conversions are pure (`computeEpochAtSlot`, `computeStartSlotAtEpoch`,
 `computeActivationExitEpoch`); accessors that read the threaded state come in two
 shapes, the monadic `getCurrentEpoch` / `getPreviousEpoch` and the pure
-`currentEpochOf` / `previousEpochOf` (functions of the boxed state, for the
+`currentEpochOf` / `previousEpochOf` (functions of the plain state, for the
 `modifyState` / `Id.run` bodies the epoch substeps build), the state-free-pure /
 state-reading-monadic split of §5. They are `forkdef`s so a later fork can
 `inherit` them.
@@ -125,7 +125,7 @@ forkdef computeSlotAtTime (genesisTime time : CLUint64) : Checked Slot :=
 /-- `get_current_epoch(state)`. Monadic: reads `state.slot`. -/
 forkdef getCurrentEpoch : StateTransition Epoch := do
   let state ← get
-  return computeEpochAtSlot (sszGet state slot)
+  return computeEpochAtSlot state.slot
 
 /-- `get_previous_epoch(state)` (`phase0/beacon-chain.md:1428-1432`):
 `saturating_sub(get_current_epoch(state), 1)`, the current epoch minus one, floored at
@@ -133,9 +133,9 @@ forkdef getCurrentEpoch : StateTransition Epoch := do
 forkdef getPreviousEpoch : StateTransition Epoch := do
   return (← getCurrentEpoch).saturatingSub 1
 
-/-- `get_current_epoch(state)` as a pure function of the boxed state, for use in
+/-- `get_current_epoch(state)` as a pure function of the plain state, for use in
 the pure `modifyState` / `Id.run` bodies the epoch substeps build. -/
-forkdef currentEpochOf (state : State) : Epoch := computeEpochAtSlot (sszGet state slot)
+forkdef currentEpochOf (state : State) : Epoch := computeEpochAtSlot state.slot
 
 /-- `get_previous_epoch(state)`, pure: `saturating_sub(get_current_epoch(state), 1)`. -/
 forkdef previousEpochOf (state : State) : Epoch := (currentEpochOf state).saturatingSub 1
