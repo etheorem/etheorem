@@ -29,10 +29,10 @@ set_option autoImplicit false
 namespace EthCLSpecs.Proofs.Heze
 
 open EthCLLib.Proofs (ForkChoiceStoreRun)
-open EthCLLib.Spec (HasherTag MapKind FcMap)
+open EthCLLib.Spec (MapKind FcMap)
 open EthCLSpecs.Heze (Preset Store isPayloadInclusionListSatisfied isPayloadVerified Root)
 
-variable {map : MapKind} [Preset] [HasherTag] [FcMap map]
+variable {map : MapKind} [Preset] [FcMap map]
 
 /-- Complete `.run` equation of `isPayloadInclusionListSatisfied` at
 `ForkChoiceStoreRun (Store map)`. Lookup of the satisfaction record
