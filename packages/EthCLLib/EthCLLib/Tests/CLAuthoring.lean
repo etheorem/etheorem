@@ -238,7 +238,7 @@ abbrev PinM := StateT (@Store mini treeMap) (Except StoreTransitionError)
 def store0 : @Store mini treeMap := { balance := 1, heights := FcMap.empty }
 
 /-- The nested machine's pre-state, shared by the composition pins. A `ToyState`
-literal types as the nested machine's `State` with no wrapper. -/
+literal types directly as the nested machine's `State`. -/
 def statePre : State := ({ counter := 41 } : ToyState)
 
 /-- Run a store action from `store0`, reporting the value or the reject. -/
