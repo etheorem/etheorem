@@ -44,7 +44,7 @@ the same error type. A monadic caller binds it through `liftErr`; a same-error c
 binds directly. -/
 forkdef getBaseReward (state : State) (i : ValidatorIndex) :
     Except StateTransitionError Gwei := do
-  let v ← sszGetIdx (sszGet state validators) i
+  let v ← sszGetIdx state.validators i
   let increments ← v.effectiveBalance / Const.effectiveBalanceIncrementG
   let base ← getBaseRewardPerIncrement state
   let total ← increments * base
@@ -56,7 +56,7 @@ pyspec's checked `Epoch` operation and raises on underflow, so it binds and the 
 carries the fault (`SPEC_ARITHMETIC.md` §4.3). -/
 forkdef getFinalityDelay (state : State) : Checked Epoch := do
   let prevEpoch := previousEpochOf state
-  prevEpoch - (sszGet state finalizedCheckpoint).epoch
+  prevEpoch - state.finalizedCheckpoint.epoch
 
 /-- `is_in_inactivity_leak` (`fulu/mainnet.py:1801-1802`): the finality delay exceeds
 `MIN_EPOCHS_TO_INACTIVITY_PENALTY`. The comparison never raises, so the fault is the

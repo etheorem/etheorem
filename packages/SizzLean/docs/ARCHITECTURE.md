@@ -494,6 +494,25 @@ Electra fits this shape. The `example` block is part of the discipline:
 each user-facing API gets a typechecker-honest example in source, per
 CLAUDE.md's literate-by-default principle.
 
+A plain `T` with `[SSZRepr T]` is a complete user surface. It needs
+no wrapper from Layer 4:
+
+* **Reads** are field projections, `v.field`, and element reads,
+  `v.xs[i]!`.
+* **Writes** are Lean record updates, `{ v with field := x }`. The
+  collection types `Vector`, `SSZList` and `ProgressiveList` add
+  `set!` for an element write, `modify` for an element
+  read-modify-write, and `push?` (on the two list types) for an
+  append.
+* **Wire format and root** are `SSZ.serialize`, `SSZ.deserialize` and
+  `SSZ.hashTreeRoot H v`. The root is a full merkleization per call.
+
+This is the plain mode, the first of the library's three modes. The
+other two, the `SSZ.Box` and the cache-only `CachedSSZ`, are Layer 4
+(§6). They add a cached Merkle tree for code that roots a large value
+many times. Both are proved or tested against the plain mode, so a
+user who needs no cache can stop at this layer.
+
 ### 5.4 Files
 
 | File | Role |
@@ -1044,8 +1063,17 @@ Per-fork containers live under `packages/EthCLSpecs/EthCLSpecs/Fulu/`,
 `packages/EthCLSpecs/EthCLSpecs/Heze/`. They use the framework's
 `forkcontainer` / `forkstruct` DSL (from `EthCLLib`), which captures
 each shape for fork inheritance and emits the `deriving SSZRepr`
-plumbing, including the minimal / mainnet variants for
+instances, including the minimal / mainnet variants for
 preset-sensitive containers like `BeaconState`.
+
+The fork bodies hold plain values, the plain mode of §5.3. The
+threaded `State` is the fork's `BeaconState` record itself. A step
+reads a field as `state.f` and writes it as `{ state with f := v }`;
+element writes use `set!` and `modify`. The framework and the fork
+bodies name no box type, and they use no `sszGet` / `sszUpdate`. The
+state root is a full merkleization through `SSZ.hashTreeRoot`, read
+at the one seam `EthCLLib.Spec.getStateRoot`. Proofs bind a plain
+`BeaconState` and need no box lemma.
 
 `packages/EthCLSpecs/EthCLSpecs/PySpecTests/Server.lean` is the
 `pyspec_server` Lake exe; the pytest harness in
@@ -1278,6 +1306,12 @@ density per use site:
 `SSZ.Box`-typed parameter form) once and operate on the
 tree-backed value. Representation choice *is* the opt-in; no
 global flag, no API divergence.
+
+The CL specs take option 1 at its plain end. The fork bodies hold
+plain `T` (§7), so every state root runs the verified recursion. A
+runner that needs a cache can keep a `CachedSSZ` beside the plain
+state and answer the `getStateRoot` seam from it; the fork bodies do
+not change.
 
 **2. `@[implemented_by]` swap.** Following Lean core's pattern (`USize.repr`
 → `lean_string_of_usize`, `Array.usize` → `lean_array_usize`):
