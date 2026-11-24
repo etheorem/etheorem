@@ -63,8 +63,8 @@ forkcontainer Toy where
 -- `modifyState`.
 state_preamble Toy
 
--- `State` is the plain record: it *is* `Toy`, a `Toy` literal types as `State` with no
--- wrapper (the section's `s0` below pins the literal form).
+-- `State` is the plain record: it *is* `Toy`, so a `Toy` literal types as `State`
+-- directly (the section's `s0` below pins the literal form).
 example : @State mini = @Toy mini := rfl
 
 /-! ## A state-transition section (the macro opens the `section`) -/
@@ -114,7 +114,7 @@ section EStateMRuns
 local instance : Preset := mini
 local instance : HasherTag := fastHasherTag
 
-/-- The plain starting state, no wrapper. -/
+/-- The plain starting state, a `Toy` literal. -/
 def s0 : State := { slot := 41, flag := 7, xs := ⟨#[1], by decide⟩ }
 
 /-- Run `action` from `xs = [1]`. The result is `.inl` of the list, or `.inr` of the

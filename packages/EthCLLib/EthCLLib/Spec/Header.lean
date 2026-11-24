@@ -70,8 +70,8 @@ namespace EthCLLib.Spec
 
 /-! ## `state_preamble`: the once-per-fork declarations -/
 
-/-- `state_preamble BeaconState`: declare the fork's plain `State` (the `BeaconState`
-record itself, no box) and the concrete-domain `modifyState`. Written once, in the
+/-- `state_preamble BeaconState`: declare the fork's `State` as an abbrev for the
+`BeaconState` record, and the concrete-domain `modifyState`. Written once, in the
 `State` module. -/
 scoped syntax (name := statePreambleStx) "state_preamble " ident : command
 
