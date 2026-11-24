@@ -38,6 +38,7 @@ Re-exports:
 * `EthCLSpecs.Proofs.Gloas`: the Gloas fork's theorems, one module per subject.
 * `EthCLSpecs.Proofs.Heze`: the Heze fork's theorems, one module per subject.
 
-The generic proof toolkit, the run facts and the pure box helpers the fork
-proofs name directly, lives in the framework, under `EthCLLib.Proofs`.
+The generic proof toolkit the fork proofs name directly — the runners'
+`StateT`-over-`Except` run facts, the indexed-read run equations and the
+pure store runner — lives in the framework, under `EthCLLib.Proofs`.
 -/
