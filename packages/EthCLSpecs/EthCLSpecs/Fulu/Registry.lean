@@ -27,7 +27,7 @@ for an active validator, in registry order. The cast raises only for a position 
 `2^64`, which no real registry reaches; the result type still carries it. -/
 forkdef getActiveValidatorIndices (state : State) (epoch : Epoch) :
     Checked (Array ValidatorIndex) := do
-  let validators := (sszGet state validators).toArray
+  let validators := state.validators.toArray
   let mut active : Array ValidatorIndex := #[]
   for h : i in [0 : validators.size] do
     if isActiveValidator validators[i] epoch then
@@ -42,7 +42,7 @@ slashed validator the previous epoch left inactive; the fold binds it inside tha
 with the checked `ValidatorIndex(index)` after its predicate, as in the comprehension. -/
 forkdef getEligibleValidatorIndices (state : State) : Checked (Array ValidatorIndex) := do
   let prevEpoch := previousEpochOf state
-  let validators := (sszGet state validators).toArray
+  let validators := state.validators.toArray
   (List.range validators.size).foldlM (init := #[]) fun out i => do
     let validator := validators[i]!
     if isActiveValidator validator prevEpoch then
@@ -55,7 +55,7 @@ forkdef getEligibleValidatorIndices (state : State) : Checked (Array ValidatorIn
 
 /-- The registry index of the first validator whose `pubkey` equals `pk`, or `none` when no
 validator carries that pubkey. The single home for the
-`(sszGet state validators).findIdx? (·.pubkey == …)` scan of the pending-deposit,
+`state.validators.findIdx? (·.pubkey == …)` scan of the pending-deposit,
 withdrawal-request, consolidation-request, and sync-aggregate paths. Returns the plain `Nat`
 position `findIdx?` produces. Most callers need the index in two forms in the same branch: a
 `Nat` to read the registry or a parallel list, and a `ValidatorIndex` to hand a balance or exit
@@ -63,7 +63,7 @@ mutator. A call site that needs the `ValidatorIndex` forms the pyspec's checked
 `ValidatorIndex(...)` cast itself (`CLUint64.ofNat?`), so only the scan and the pubkey key
 live here. -/
 forkdef validatorIndexByPubkey? (state : State) (pk : BLSPubkey) : Option Nat :=
-  (sszGet state validators).findIdx? (·.pubkey == pk)
+  state.validators.findIdx? (·.pubkey == pk)
 
 end
 

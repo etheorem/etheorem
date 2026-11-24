@@ -14,7 +14,7 @@ brings it all into scope; it holds no declarations of its own. The pieces:
   (`BuilderPayment`), the EIP-8282 builder requests and the extended
   `ExecutionRequests` (`ExecutionRequests`), the payload-attestation family
   (`PayloadAttestation`), and the revealed payload / envelope (`Execution`);
-- the changed `BeaconState` and its boxed view (`State`);
+- the changed `BeaconState` and the fork's `State` abbrev over it (`State`);
 - the ePBS `BeaconBlockBody` / `BeaconBlock` (`Block`).
 
 The unchanged component and operation containers (`Validator`, `Eth1Data`,

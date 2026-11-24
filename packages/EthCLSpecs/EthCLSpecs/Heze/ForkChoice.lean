@@ -91,7 +91,7 @@ timeliness inside the entry. alpha.12 keyed by the committee's root, stored list
 root, and kept the timeliness in a separate map.
 
 A `forkstruct` rather than a bare `structure`, so a later fork can `inherit` it, and so it
-carries the auto `[Preset]` / `[HasherTag]` uniformly with the containers it nests.
+carries the auto `[Preset]` uniformly with the containers it nests.
 
 This declaration is the canonical home of the fold-in rationale. The spec keeps
 `InclusionListStore` as a process-lifetime singleton reached through
@@ -100,7 +100,7 @@ the generic `StoreTransition` monad (`SPEC_AUTHORING_MODEL.md` §4), with no amb
 singleton to hang the spec's store off, so the store is modeled as a `Store` field instead
 and moves with the rest of the state. Behavior is identical. It is fork-choice state, so it
 lives here, next to the handlers that drive it. -/
-forkstruct InclusionListStore (map : MapKind) [HasherTag] where
+forkstruct InclusionListStore (map : MapKind) where
   inclusionLists : map (Slot × Root) (map ValidatorIndex InclusionListEntry)
   equivocators   : map (Slot × Root) (Array ValidatorIndex)
 
@@ -252,7 +252,7 @@ end
 satisfied the inclusion-list constraints (`consensus-specs/specs/heze/fork-choice.md:133`);
 `inclusionListStore` folds in the spec's separate `InclusionListStore` (see the module docstring).
 The seventeen Gloas fields are restated verbatim. -/
-forkstruct Store (map : MapKind) [HasherTag] where
+forkstruct Store (map : MapKind) where
   timeMs                        : CLUint64
   genesisTimeMs                 : CLUint64
   justifiedCheckpoint           : Checkpoint
@@ -441,9 +441,9 @@ forkdef recordPayloadInclusionListSatisfaction (store : Store map) (root : Root)
 /-- `on_execution_payload_envelope` (Heze override,
 `consensus-specs/specs/heze/fork-choice.md:317-344`): the Gloas body with one added step,
 `record_payload_inclusion_list_satisfaction` is called on the verified envelope *before* the
-payload is stored, so `should_extend_payload` can later read the recorded answer. `state` is the
-pre-verify `block_states[root]`, as in the spec; the warm state from
-`verify_execution_payload_envelope` is kept only for `blockStates`. -/
+payload is stored, so `should_extend_payload` can later read the recorded answer. As in the
+spec, the handler writes `payloads` and the recorder's satisfaction map, and leaves
+`blockStates` as it was. -/
 forkdef onExecutionPayloadEnvelope (signedEnv : SignedExecutionPayloadEnvelope) : StoreTransition Unit := do
   let store ← get
   let envelope := signedEnv.message
@@ -455,7 +455,7 @@ forkdef onExecutionPayloadEnvelope (signedEnv : SignedExecutionPayloadEnvelope) 
 
   match verifyExecutionPayloadEnvelope state signedEnv with
   | .error e => throw e
-  | .ok warm =>
+  | .ok () =>
     -- [New in Heze:EIP7805] record whether the payload satisfies the inclusion-list constraints
     let store ← recordPayloadInclusionListSatisfaction store envelope.beaconBlockRoot envelope.payload
     -- INVARIANT: `payloads[root]` and `payloadInclusionListSatisfaction[root]` are written
@@ -465,7 +465,6 @@ forkdef onExecutionPayloadEnvelope (signedEnv : SignedExecutionPayloadEnvelope) 
     -- and this pairing is what keeps that reject unreachable for any verified `root`
     -- (present in `payloads`).
     set { store with
-      blockStates := FcMap.insert store.blockStates envelope.beaconBlockRoot warm,
       payloads := FcMap.insert store.payloads envelope.beaconBlockRoot envelope }
 
 end EngineSeam
@@ -487,14 +486,14 @@ hash_tree_root(anchor_state)`, so the seed is a throwing `Except StoreTransition
 rather than a total store literal. `pinAnchorRejects` locks the reject branch. -/
 forkdef getForkchoiceStore (anchorState : State) (anchorBlock : BeaconBlock) :
     Except StoreTransitionError (Store map) := do
-  -- `anchor_block.state_root == hash_tree_root(anchor_state)`: the boxed state hashes
-  -- through `stateRoot` (the cached-tree path), not `htr` (which wants a bare `SSZRepr`).
-  assert (anchorBlock.stateRoot == bytesToRoot (stateRoot anchorState).1)
+  -- `anchor_block.state_root == hash_tree_root(anchor_state)`: the anchor state is a value,
+  -- so `htr` roots it, a full merkleization of the plain record.
+  assert (anchorBlock.stateRoot == htr anchorState)
   let anchorRoot := htr anchorBlock
   let epoch := currentEpochOf anchorState
   let cp : Checkpoint := { epoch := epoch, root := anchorRoot }
-  let genesisTimeMs := secondsToMilliseconds (sszGet anchorState genesisTime)
-  let timeMs ← computeTimeAtSlotMs genesisTimeMs (sszGet anchorState slot)
+  let genesisTimeMs := secondsToMilliseconds anchorState.genesisTime
+  let timeMs ← computeTimeAtSlotMs genesisTimeMs anchorState.slot
   let emptyVotes : Array (Option Bool) := Array.replicate Const.ptcSize none
   pure
     { timeMs := timeMs
@@ -580,7 +579,7 @@ forkdef onInclusionList (signed : SignedInclusionList) : StoreTransition Unit :=
   let dependentState ← FcMap.getOrThrow store.blockStates inclusionList.dependentRoot
   let lookaheadStartSlot ← computeShufflingLookaheadStartSlot epoch
   let state ←
-    if (sszGet dependentState slot) < lookaheadStartSlot then
+    if dependentState.slot < lookaheadStartSlot then
       runNestedStateTransition dependentState (processSlots lookaheadStartSlot)
     else pure dependentState
   let committee ← getInclusionListCommittee state inclusionList.slot
