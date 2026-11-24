@@ -21,9 +21,9 @@ vectors) to `ByteArray` before calling, so the seam carries no SSZ dependency.
 
 Three backends ship here: `ffi` (the real FFI primitives, used by the runner),
 `verifyOff` (signature checks short-circuit to accept, for `bls_setting: 2`
-vectors), and `symbolic` (all checks accept, for the proofs config). Memoization
-of repeated hashes is handled structurally by SizzLean's cached `Box`, so the
-crypto seam itself stays a thin pass-through.
+vectors), and `symbolic` (all checks accept, for the proofs config). SSZ hashing
+stays outside the seam: a fork body takes its roots through `HasherTag`
+(`Spec/Hasher.lean`).
 -/
 
 set_option autoImplicit false

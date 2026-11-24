@@ -69,7 +69,7 @@ forkdef processOperations (body : BeaconBlockBody) (parentSlot : Slot) : StateTr
 `process_eth1_data` (EIP-8015). The parent block's slot is read first, before
 `process_block_header` replaces the latest header. -/
 forkdef processBlock (block : BeaconBlock) : StateTransition Unit := do
-  let parentSlot := (sszGet (← get) latestBlockHeader).slot
+  let parentSlot := (← get).latestBlockHeader.slot
   processParentExecutionPayload block
   processBlockHeader block
   processWithdrawals
