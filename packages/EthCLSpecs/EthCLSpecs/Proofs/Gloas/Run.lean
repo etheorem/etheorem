@@ -14,7 +14,7 @@ machine's counterpart is the pure store runner in `EthCLLib/Proofs/StoreRun.lean
 
 `SPEC_AUTHORING_MODEL.md` sets out a fast/pure duality across four axes, and names
 `StateT State (Except StateTransitionError)` as the proving column's effect monad;
-`SPECS_ARCHITECTURE.md` §11.1 states that the fast configuration (`FastBox`, `EStateM`,
+`SPECS_ARCHITECTURE.md` §11.1 states that the fast configuration (`EStateM`,
 `hashMap`) is never a proof target. This is that monad.
 
 No fork body names it. The three raw constraints `state_section` emits (`Monad`,
@@ -35,10 +35,9 @@ monad it resolves to this one. So every theorem below is a theorem about the ste
 under fork choice too. Carrying one over is function application:
 `runNestedStateTransition_of_ok` (`EthCLLib/Spec/NestedMachine.lean`) takes a step's
 `.run` fact and returns the store-machine statement, for any action. This is why a
-contract theorem states the run on `pureState preState`, at the box, in `.run` form: that is
-the shape the bridge consumes. `runPure` (`EthCLLib/Proofs/Run.lean`) pins the box and gives the
-value-level reading of the same contract; a theorem never runs an action on a `State`
-it bound itself.
+contract theorem states the run in `.run` form: that is the shape the bridge consumes. The
+Gloas `State` is the plain `BeaconState`, so a theorem binds `preState : BeaconState` and
+runs the action on `preState` itself.
 
 The `StateT`-over-`Except` bind, throw, and `Except` facts that every run proof rewrites
 with live in `EthCLLib/Proofs/Run.lean`, at any state and error type. Gloas and Heze call sites
@@ -49,18 +48,18 @@ set_option autoImplicit false
 
 namespace EthCLSpecs.Proofs.Gloas
 
-open EthCLLib.Spec (HasherTag StateTransitionError)
+open EthCLLib.Spec (StateTransitionError)
 open EthCLSpecs.Gloas (Preset)
 open EthCLSpecs.Gloas (State)
 
 /-- The monad the Gloas spec bodies are proved at: `StateT` over `Except`, threading the
-boxed Gloas `BeaconState` and rejecting with `StateTransitionError`. `abbrev`
+plain Gloas `BeaconState` and rejecting with `StateTransitionError`. `abbrev`
 (reducible) so a goal mentioning it unifies with the spelled-out
 `StateT State (Except StateTransitionError)`.
 
 `.run` here yields `Except StateTransitionError (α × State)`, so a successful run reads
 `.ok (a, state')` and a rejecting one reads `.error e`, carrying no state. -/
-abbrev GloasRun [Preset] [HasherTag] : Type → Type :=
+abbrev GloasRun [Preset] : Type → Type :=
   StateT State (Except StateTransitionError)
 
 end EthCLSpecs.Proofs.Gloas

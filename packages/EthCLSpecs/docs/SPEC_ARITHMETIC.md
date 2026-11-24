@@ -3,10 +3,10 @@
 The required arithmetic behavior and authoring rules for all consensus-spec code in
 `EthCLSpecs`, supported by the arithmetic layer in `EthCLLib`.
 
-This document prescribes the final state. It remains the contract for future additions
+This document defines the implemented arithmetic contract. It governs future additions
 and spec re-pins. Sections 1 to 3 describe the pinned behavior; Sections 4 to 7 prescribe
-the implementation and its use. The temporary [SPEC_ARITHMETIC_PLAN.md](SPEC_ARITHMETIC_PLAN.md)
-records the transition from the current implementation and is removed when that work ends.
+the implementation and its use. The spec arithmetic completion record in
+[IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md) records the transition to this contract.
 
 Pin: `v1.7.0-beta.4`, with `eth-ssz-specs` 0.1.0 as the pyspec's integer library. Line citations
 (`<file>.md:NN`) resolve under `specs/` in `ethereum/consensus-specs` at the pin. Every re-pin
@@ -418,7 +418,10 @@ class ToIndex (ι : Type) where
 It has instances for `Nat`, `CLUint64`, and `CLInt`. The `CLInt` instance counts a negative
 index from the end. Its `idx?` gives `0` for a negative index, because the `IndexError`
 payload holds a `Nat`. The pure read `getAt`, the pure write `setAt`, and the raising read
-`sszGetIdx` take any index type with an instance. `SizzLean` keeps `Nat` indices.
+`sszGetIdx` take any index type with an instance. The read takes the collection as a
+projection of the plain state, as in `sszGetIdx state.validators i`. `SizzLean` keeps
+`Nat` indices. Its collection writes `set!` and `modify` take a `Nat` position, such as
+`i.toPlainNat` for a `ValidatorIndex`.
 
 The raising read stays in the ambient monad. Its failure remains `IndexError`-shaped,
 mapped to `outOfBounds` by the error conversion.
@@ -480,8 +483,8 @@ Provide chain lemmas that expose every intermediate range test, plus laws for ca
 positive divisors, lifts, and index conversion. Keep a focused arithmetic simp set.
 Move reusable checked-fold lemmas into the framework before duplicating them across forks.
 
-A transition characterization states successful results and failure behavior through
-`runPure` over a plain state. An `.ok` hypothesis must name a real arithmetic obligation. Keep a
+A transition characterization states successful results and failure behavior with `.run`
+over a plain state. An `.ok` hypothesis must name a real arithmetic obligation. Keep a
 separate characterization of failure when a successful-case theorem needs that hypothesis.
 State theorems about each fork's own re-elaborated declarations.
 
@@ -595,11 +598,10 @@ when the source is a Python plain-integer subtraction.
 
 ### 5.7 Why the index class sits in `EthCLLib`
 
-`SizzLean` could own the class, and its path forms `sszGet state f[i]` could then take a checked
-index. Those forms exist to hide the state box and to drive the cached tree update. A state
-held as a plain value does not need them: a read is a projection and a write is a structure
-update. `sszGetIdx` is a function in `EthCLLib` with no reference to the box, so the class
-belongs beside it.
+`SizzLean` keeps `Nat` positions in its collection API. The checked index types
+(`CLUint64`, `CLInt`) and the pyspec's `IndexError` rule belong to the spec model, and
+both live in `EthCLLib`. `sszGetIdx`, the reader that uses the class, is a function in
+`EthCLLib`, so the class sits beside it.
 
 ## 6. What the rule allows and forbids
 
@@ -667,6 +669,32 @@ and configuration fields throughout `EthCLSpecs`.
 Source review and behavior tests establish adherence to the bind rules. Changes to the
 arithmetic framework also record build and run-time costs. Prefer a cheaper equivalent
 implementation when measurements support it; preserve the semantic contract at any cost.
+
+The accepted `specs-arithmetics` measurements below are the baseline for a new
+measurement. The completion record in [IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md)
+holds their anchors, full comparisons, and method detail.
+
+| Measurement | Accepted value |
+|---|---|
+| Cold build | 25m29.8s, 621 jobs |
+| No-op build | 0.443s |
+| Incremental build | 6m08.3s |
+| Profile, `ForkInterface.stateRoot BeaconState` median | 264.66 ms |
+| Profile, `ForkInterface.runBlocks` median | 600.32 ms |
+| Epoch suite, Gloas mainnet `epoch_processing` | 125.08s |
+
+The builds follow one recipe: warm-up, cold, no-op, incremental, restore. The cold build
+is `lake clean && lake build EthCLSpecs`. The incremental build appends one line to
+`EthCLSpecs/Fulu/Time.lean` and rebuilds. Every step ran sequentially and alone on the
+machine, on 12 cores with Lake default parallelism and pytest `-n 6`. The profile rows
+are the two headline medians of `just ethcl-profile` on the Gloas mainnet
+`sanity/blocks` vector `full_random_operations_0`. The epoch suite is the Gloas mainnet
+`epoch_processing` handler, 154 cases; the table value is the second of two runs.
+
+Run-to-run variance is real, and a new measurement must allow for it: the two
+epoch-suite runs sat 6.4s (5.1%) apart, and the builds moved within 3.3% against the
+recorded anchors. Two causes stay unknown: the share of background load in that build
+spread, and the first epoch run's extra 6.4s.
 
 ## 8. Checking this document against a pin
 

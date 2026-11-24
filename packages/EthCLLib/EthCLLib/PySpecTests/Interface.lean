@@ -15,7 +15,7 @@ A fork's container types are fork-specific, so the interface cannot name them
 and stay fork-agnostic. It works at the **wire boundary** instead: every method
 takes raw SSZ `ByteArray`s (a pre-state, a block, an operation) and returns a
 post-state Merkle **root** as a `ByteArray`, or a typed reject. The fork decodes
-through its own `SSZRepr`, runs the entry point on the boxed state, and takes the
+through its own `SSZRepr`, runs the entry point on the decoded state, and takes the
 root; the driver compares two roots, both `ByteArray`s, so it never names a fork
 type. This is what lets the generic driver live in `EthCLLib` and depend on no
 spec.
