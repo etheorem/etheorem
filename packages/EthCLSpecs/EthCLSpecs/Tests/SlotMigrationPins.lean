@@ -28,8 +28,8 @@ on the state machine at site 3, and the `Checked` result's `.range` cause at sit
 where `compute_time_at_slot_ms` returns `Checked`. A wrapping form gives a different
 outcome at both sites: at site 2 the wrapped product returns `.ok`, and at site 3 the
 wrapped bound `1` fails the recency assert with `.error (.assert _)`. So those failure
-pins fail under it. `Tests/ClockMigrationPins.lean` pins the clock's other sites. `State` is
-FFI-backed and the roots hash through the FFI `Sha256`, so `native_decide`.
+pins fail under it. `Tests/ClockMigrationPins.lean` pins the clock's other sites. The pins
+hash through the FFI `Sha256` (`fastHasherTag`), so `native_decide`.
 -/
 
 set_option autoImplicit false
@@ -53,12 +53,11 @@ private def pinProcessSlotsToMaxSlotReadsMax : Bool :=
   letI : CryptoBackend := CryptoBackend.ffi
   let st0 : @BeaconState minimal :=
     { (default : @BeaconState minimal) with slot := 18446744073709551614 }
-  let box0 : SSZ.Box Sha256 (@BeaconState minimal) := SSZ.FastBox st0
   let action : EStateM StateTransitionError
-      (SSZ.Box Sha256 (@BeaconState minimal)) Unit :=
+      (@BeaconState minimal) Unit :=
     processSlots (18446744073709551615 : Slot)
-  match action.run box0 with
-  | .ok _ st => sszGet st slot = 18446744073709551615
+  match action.run st0 with
+  | .ok _ st => st.slot = 18446744073709551615
   | _ => false
 example : pinProcessSlotsToMaxSlotReadsMax = true := by native_decide
 
@@ -71,11 +70,10 @@ private def pinProcessSlotsAtMaxSlotRejects : Bool :=
   letI : CryptoBackend := CryptoBackend.ffi
   let st0 : @BeaconState minimal :=
     { (default : @BeaconState minimal) with slot := 18446744073709551615 }
-  let box0 : SSZ.Box Sha256 (@BeaconState minimal) := SSZ.FastBox st0
   let action : EStateM StateTransitionError
-      (SSZ.Box Sha256 (@BeaconState minimal)) Unit :=
+      (@BeaconState minimal) Unit :=
     processSlots (18446744073709551615 : Slot)
-  match action.run box0 with
+  match action.run st0 with
   | .error (.assert _) _ => true
   | _ => false
 example : pinProcessSlotsAtMaxSlotRejects = true := by native_decide
@@ -109,14 +107,13 @@ bound `1`, and the recency assert then rejects with `.assert` instead. -/
 private def pinBlockRootRecencyBoundOverflows : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
-  let box0 : SSZ.Box Sha256 (@BeaconState minimal) :=
-    SSZ.FastBox { (default : @BeaconState minimal) with slot := 18446744073709551615 }
+  let st0 : @BeaconState minimal :=
+    { (default : @BeaconState minimal) with slot := 18446744073709551615 }
   let action : EStateM StateTransitionError
-      (SSZ.Box Sha256 (@BeaconState minimal)) Root :=
-    getBlockRootAtSlot box0 (18446744073709551553 : Slot)
-  match action.run box0 with
+      (@BeaconState minimal) Root :=
+    getBlockRootAtSlot st0 (18446744073709551553 : Slot)
+  match action.run st0 with
   | .error (.arithmetic _) _ => true
   | _ => false
 example : pinBlockRootRecencyBoundOverflows = true := by native_decide
@@ -127,18 +124,16 @@ and returns the marker root stored there, and no other entry holds it. -/
 private def pinBlockRootRingWrapReads : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   let marker : Root := Vector.replicate 32 7
   let st0 : @BeaconState minimal :=
     { (default : @BeaconState minimal) with
       slot := 128
       blockRoots := Vector.ofFn (fun i => if i.val == 0 then marker else default) }
-  let box0 : SSZ.Box Sha256 (@BeaconState minimal) := SSZ.FastBox st0
   let action : EStateM StateTransitionError
-      (SSZ.Box Sha256 (@BeaconState minimal)) Root :=
-    getBlockRootAtSlot box0 (64 : Slot)
-  match action.run box0 with
+      (@BeaconState minimal) Root :=
+    getBlockRootAtSlot st0 (64 : Slot)
+  match action.run st0 with
   | .ok r _ => r = marker
   | _ => false
 example : pinBlockRootRingWrapReads = true := by native_decide

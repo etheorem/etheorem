@@ -126,14 +126,12 @@ example : pinTimeAtSlotCappedGenesisSlotZero = true := by native_decide
 
 /-! ### 5. The fork-choice store clock -/
 
-/-- The pins' concrete fork-choice monad: the minimal preset over `treeMap` and the FFI
-hasher. -/
-private abbrev PinM := EStateM StoreTransitionError (@Store minimal treeMap fastHasherTag)
+/-- The pins' concrete fork-choice monad: the minimal preset over `treeMap`. -/
+private abbrev PinM := EStateM StoreTransitionError (@Store minimal treeMap)
 
 /-- An empty Fulu `Store` at `genesis_time_ms = 6000` with the clock at `timeMs`. -/
-private def clockStore (timeMs : CLUint64) : @Store minimal treeMap fastHasherTag :=
+private def clockStore (timeMs : CLUint64) : @Store minimal treeMap :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   { timeMs := timeMs, genesisTimeMs := 6000
     justifiedCheckpoint := default, finalizedCheckpoint := default
     unrealizedJustifiedCheckpoint := default, unrealizedFinalizedCheckpoint := default
@@ -151,7 +149,6 @@ subtraction raises, and the lift lands it on the store machine as a nested range
 private def pinCurrentSlotBeforeGenesis : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   let store := clockStore 5999
   match (getCurrentSlot (map := treeMap) store : PinM Slot).run store with
   | .error (.transition (.arithmetic _)) _ => true
@@ -163,7 +160,6 @@ example : pinCurrentSlotBeforeGenesis = true := by native_decide
 private def pinOnTickCatchesUp : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   let store := clockStore 6000
   let action : PinM Slot := do
     onTick (map := treeMap) 18001
