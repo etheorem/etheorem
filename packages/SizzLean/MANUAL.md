@@ -148,14 +148,14 @@ then run many `sszUpdate`s on the result, the cache pays for
 itself across the second and subsequent root computations. In a
 proof you wrap with the uncached flavour because you want every
 `hashTreeRoot` call to reduce like an ordinary function of the
-value; closing a theorem with `rfl` (concrete bytes included,
-via `native_decide`) is then routine.
+value. Close symbolic equalities with `rfl`, or use
+`native_decide` for concrete bytes.
 
 **Hasher**: `Sha256` (default, FFI) vs anything else:
 
 | Hasher | When to pick it |
 |---|---|
-| `Sha256` (default, what `SSZ.FastBox v` / `SSZ.PureBox v` use) | running real code; proofs about concrete root bytes via `native_decide` (one compiler axiom per call) |
+| `Sha256` (default, what `SSZ.FastBox v` / `SSZ.PureBox v` use) | running real code; proofs about concrete root bytes via `native_decide` (one compiler axiom per call, plus `sha256Combine_eq_spec` and `sha256BatchCombine_eq_spec` through the hasher instance) |
 | `Sha256Spec` (pure-Lean reference) | proofs about concrete root bytes with the FFI out of the trusted base: `native_decide` adds only its own compiler axiom, no FFI-equivalence axioms (or `rfl` when both sides hash the same buffers symbolically) |
 | any future `Hasher` instance (e.g. Poseidon2) | adopt by writing your spec generic in `H` today; only the wrap at the call site changes when the new hasher arrives |
 
@@ -523,8 +523,8 @@ involves `hashTreeRoot`. Pick by what the goal needs:
 | Goal shape | Tactic | Notes |
 |---|---|---|
 | Symbolic state-transition equality, both sides hash the same buffers; no concrete bytes needed | `rfl` / `simp` / `unfold` | no extra trust commitment |
-| FFI-hashed term must reduce to concrete bytes (e.g. *"this state's root is `0xAB…`"*) | `native_decide` | adds the standard `Lean.ofReduceBool` compiler axiom |
-| FFI-hashed term you want to manipulate symbolically before evaluating | rewrite with `sha256Hash_eq_spec` / `sha256Combine_eq_spec`, then `native_decide` | cites the two named FFI ≡ pure-Lean equivalence axioms, both auditable by name |
+| FFI-hashed term must reduce to concrete bytes (e.g. *"this state's root is `0xAB…`"*) | `native_decide` | cites a compiler axiom plus `sha256Combine_eq_spec` and `sha256BatchCombine_eq_spec` through the `Sha256` instance |
+| FFI-hashed term you want to manipulate symbolically before evaluating | rewrite with `sha256Hash_eq_spec`, `sha256Combine_eq_spec` or `sha256BatchCombine_eq_spec` as needed, then `native_decide` | cites the rewrite axioms used, the `Sha256` instance's two equivalence axioms when that instance occurs, and a compiler axiom |
 | Pure-Lean hashed term (`SSZ.hashTreeRoot Sha256Spec v`, or a box built via `SSZ.UncachedBox Sha256Spec` / `SSZ.CachedBox Sha256Spec`) → concrete bytes | `native_decide` | the hash runs in pure Lean, so the FFI-equivalence axioms drop out; the `native_decide` compiler axiom stays |
 
 One limit to know: kernel `decide` cannot reduce a concrete-root
@@ -532,9 +532,13 @@ goal under any hasher. The merkleization on top of the hasher
 primitives is a well-founded recursion (`Spec/HashTreeRoot.lean`),
 and `decide` does not unfold it, so reduction gets stuck even
 when the hasher itself is pure Lean. Goals about the primitives
-alone — a bare `Hasher.hash (H := Sha256Spec) b`, say — do close
+alone, such as a bare `Hasher.hash (H := Sha256Spec) b`, do close
 by plain `decide`. For the whole root, `native_decide` is the
 tactic, with either hasher.
+
+Inspect a named theorem with `#print axioms theoremName` to see
+its trust assumptions. On the pinned toolchain, the compiler axiom
+prints as `theoremName._native.native_decide.ax_1_1`.
 
 On plain values the first row is the common case. A plain
 transition is a function from `T` to `T`, so a theorem about it
@@ -754,10 +758,9 @@ deriving SSZRepr
 Element access / replacement / read-modify-write / length.
 `get!` returns `default` on out-of-bounds, which is why it needs
 an `Inhabited` instance for the element type (`deriving
-SSZRepr, Inhabited` on your container covers it); `set!`,
-`modify` and `push?`
-are no-ops on out-of-bounds and preserve the cap proof either
-way. `modify i f` replaces element `i` with `f` applied to it.
+SSZRepr, Inhabited` on your container covers it). `set!` and
+`modify` are no-ops on out-of-bounds and preserve the cap proof
+either way. `modify i f` replaces element `i` with `f` applied to it.
 `size` is the runtime length.
 
 ```lean
@@ -805,9 +808,11 @@ call. With `Sha256Spec` the hash runs in pure Lean, so a
 ```lean
 #eval SSZ.hashTreeRoot Sha256 f0
 
--- The two hashers agree on this root. `native_decide` checks it;
--- with `Sha256Spec` on the left the proof cites no FFI axiom.
-example : SSZ.hashTreeRoot Sha256Spec f0 = SSZ.hashTreeRoot Sha256 f0 := by
+-- Setting the epoch to its current value preserves the root.
+-- Both sides use `Sha256Spec`, so the proof cites no FFI axiom.
+example :
+    SSZ.hashTreeRoot Sha256Spec (bumpEpoch f0 5)
+      = SSZ.hashTreeRoot Sha256Spec f0 := by
   native_decide
 ```
 
@@ -1077,13 +1082,20 @@ example :
   native_decide   -- pure Lean: no FFI, no FFI-equivalence axioms
 ```
 
-#### `sha256Hash_eq_spec`, `sha256Combine_eq_spec`
+#### `sha256Hash_eq_spec`, `sha256Combine_eq_spec`, `sha256BatchCombine_eq_spec`
 
-Two named axioms asserting that the FFI primitives
-(`sha256Hash`, `sha256Combine`) agree pointwise with the pure-
-Lean reference (`LeanSha256.hash`, `LeanSha256.combine`). Use as
-rewrite targets when a proof needs to manipulate an FFI-hashed
-term symbolically before evaluating with `native_decide`.
+Three named axioms asserting that the FFI primitives agree with
+the pure-Lean reference. `sha256Hash_eq_spec` and
+`sha256Combine_eq_spec` cover scalar hashing and combining.
+`sha256BatchCombine_eq_spec` covers batched combining against
+`sha256BatchCombineSpec`, which maps `LeanSha256.combine` over
+pairs. Use them as rewrite targets before `native_decide` when a
+proof needs to manipulate an FFI-hashed term symbolically.
+
+The `Sha256` instance proves its `batchCombine_eq` field from
+`sha256Combine_eq_spec` and `sha256BatchCombine_eq_spec`.
+A concrete-root proof using that instance cites both axioms,
+even without an explicit rewrite.
 
 ```lean
 example (b : ByteArray) :
