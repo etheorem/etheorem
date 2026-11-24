@@ -218,6 +218,12 @@ jobs:
         # request under review rather than in a commit CI pushes behind the
         # author's back.
         run: just proof-coverage-check
+      - name: No SSZ box in the CL specs (source search + dependency rule)
+        # The CL specs hold plain SSZ values. The step fails when a box name
+        # appears under `packages/EthCLLib` or `packages/EthCLSpecs/EthCLSpecs`,
+        # or when a constant of those trees depends on `SizzLean.Cache.SSZ.Box`
+        # or its backings. Reads the `.olean`s the steps above built.
+        run: just check-no-box
       - name: Install Python dependencies
         run: just setup-python
       - name: EthCLSpecs pyspec smoke gate (minimal, both forks)
