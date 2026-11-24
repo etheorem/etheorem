@@ -32,7 +32,6 @@ Pins 1 and 2 run the `Checked` helper alone, so the raise surfaces as the
 `ArithFault` range cause, `.error (.range _ 64 _ _)`. Pins 3 and 4 run the
 transition, where the lift turns that fault into `.error (.arithmetic _)`. The
 old wrapping form returned a wrapped `.ok`, so each failure pin discriminates.
-`State` is FFI-backed, so `native_decide`.
 -/
 
 set_option autoImplicit false
@@ -103,9 +102,8 @@ private def hugeDelayConfig : Gloas.Config :=
 (current epoch `100`), so `initiate_validator_exit`'s gates pass and the
 withdrawability sum is reached. The config argument is the run's, so the two
 pins below can run the same state under the two configs. -/
-private def exitState (_cfg : Gloas.Config) : @State minimal fastHasherTag :=
+private def exitState (_cfg : Gloas.Config) : @State minimal :=
   letI : Preset := minimal
-  letI : HasherTag := fastHasherTag
   let v : Validator :=
     { (default : Validator) with
       activationEligibilityEpoch := 0
@@ -115,15 +113,13 @@ private def exitState (_cfg : Gloas.Config) : @State minimal fastHasherTag :=
       exitEpoch := Const.farFutureEpoch
       withdrawableEpoch := Const.farFutureEpoch
       withdrawalCredentials := (Vector.replicate 32 (1 : UInt8)) }
-  SSZ.FastBox
-    { (default : @EthCLSpecs.Gloas.BeaconState minimal) with
-      slot := 800
-      validators := ⟨#[v]⟩, balances := ⟨#[32000000000]⟩ }
+  { (default : @EthCLSpecs.Gloas.BeaconState minimal) with
+    slot := 800
+    validators := ⟨#[v]⟩, balances := ⟨#[32000000000]⟩ }
 
 private def pinValidatorExitOverflowRaises : Bool :=
   letI : Preset := minimal
   letI : Config := hugeDelayConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (initiateValidatorExit 0 : EStateM StateTransitionError State Unit).run
       (exitState hugeDelayConfig) with
@@ -134,7 +130,6 @@ example : pinValidatorExitOverflowRaises = true := by native_decide
 private def pinValidatorExitDefaultReads : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   match (initiateValidatorExit 0 : EStateM StateTransitionError State Unit).run
       (exitState minimalConfig) with
@@ -143,7 +138,7 @@ private def pinValidatorExitDefaultReads : Bool :=
     -- preset, the exit epoch is `100 + 1 + MAX_SEED_LOOKAHEAD = 105` (the
     -- churn limit covers the one `32 Gwei` exit), and the withdrawability
     -- epoch is `105 + 256`.
-    let v := (SSZ.Box.view post).validators[0]!
+    let v := post.validators[0]!
     v.exitEpoch.toPlainNat = 105 && v.withdrawableEpoch.toPlainNat = 361
   | _ => false
 example : pinValidatorExitDefaultReads = true := by native_decide
@@ -157,7 +152,6 @@ in this fork body), so the request passes the gates and reaches
 private def pinWithdrawalRequestOverflowRaises : Bool :=
   letI : Preset := minimal
   letI : Config := hugeDelayConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   let wr : WithdrawalRequest :=
     { sourceAddress := (Vector.replicate 20 (1 : UInt8))
@@ -172,7 +166,6 @@ example : pinWithdrawalRequestOverflowRaises = true := by native_decide
 private def pinWithdrawalRequestDefaultReads : Bool :=
   letI : Preset := minimal
   letI : Config := minimalConfig
-  letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.ffi
   let wr : WithdrawalRequest :=
     { sourceAddress := (Vector.replicate 20 (1 : UInt8))
@@ -183,7 +176,7 @@ private def pinWithdrawalRequestDefaultReads : Bool :=
   | .ok _ post =>
     -- The same exact epochs the direct validator-exit pin asserts: the request
     -- path reaches `initiate_validator_exit` and writes `105` and `361`.
-    let v := (SSZ.Box.view post).validators[0]!
+    let v := post.validators[0]!
     v.exitEpoch.toPlainNat = 105 && v.withdrawableEpoch.toPlainNat = 361
   | _ => false
 example : pinWithdrawalRequestDefaultReads = true := by native_decide

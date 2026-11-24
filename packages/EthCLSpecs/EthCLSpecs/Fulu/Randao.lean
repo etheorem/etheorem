@@ -22,7 +22,7 @@ underlying-value projection feeds the total read, the use the mod bound permits 
 forkdef getRandaoMix (epoch : Epoch) : StateTransition Bytes32 := do
   let state ← get
   let idx ← epoch % Const.epochsPerHistoricalVectorC
-  return vget (sszGet state randaoMixes) idx.toPlainNat
+  return vget state.randaoMixes idx.toPlainNat
 
 end
 
