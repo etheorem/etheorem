@@ -26,9 +26,9 @@ namespace EthCLSpecs.Fulu
 
 state_section
 
-/-- Modify validator `i` via the infallible `[i]!` element write: total (fits the
-pure `State → State` shape), and `Array.modify` moves the element out before `f`
-updates it in place. The helper has no pyspec twin: every caller reads
+/-- Modify validator `i` through the list's `modify`, which leaves the list unchanged out of
+range: total, so it fits the pure `State → State` shape. `Array.modify` moves the element out
+before `f` updates it in place. The helper has no pyspec twin: every caller reads
 `validators[i]` through the raising `sszGetIdx` first, so the position is in range here. -/
 forkdef modValidator (state : State) (i : ValidatorIndex) (f : Validator → Validator) : State :=
   -- `toPlainNat`: the caller's raising read already proved `i` in range (see above).

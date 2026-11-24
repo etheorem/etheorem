@@ -134,7 +134,7 @@ private def runRewardsImpl (P : Preset) (C : Config) (preBytes : ByteArray) :
     pure #[← mkDeltas d0, ← mkDeltas d1, ← mkDeltas d2,
       ← mkDeltas (zeros, inactPenalties)]
 
-/-- Decode a plain (non-boxed) SSZ operation value. -/
+/-- Decode an SSZ operation value, or the runner's `decode` error. -/
 private def decodeOp (T : Type) [SizzLean.SSZRepr T] (b : ByteArray) :
     Except (RunError StateTransitionError) T :=
   match SSZ.deserialize (T := T) b with
