@@ -14,9 +14,9 @@ defaultTargets = ["EthCLLib"]
 moreLinkArgs = ["-L/usr/lib/x86_64-linux-gnu", "-L/usr/lib64", "-L/opt/homebrew/opt/openssl@3/lib", "-L/usr/local/opt/openssl@3/lib", "-lcrypto"]
 moreLeancArgs = ["-march=native"]
 
-# SizzLean supplies the SSZ machinery (SSZRepr, Box, the cache, sszGet /
-# sszUpdate, the Hasher class with the Sha256 / Sha256Spec tags). It
-# transitively pulls in LeanHazmatSha256 (the FFI SHA-256).
+# SizzLean supplies the SSZ machinery (the SSZ collection types, SSZRepr,
+# hashTreeRoot, IndexError, the Hasher class with the Sha256 / Sha256Spec tags).
+# It transitively pulls in LeanHazmatSha256 (the FFI SHA-256).
 [[require]]
 name = "SizzLean"
 path = "../SizzLean"
