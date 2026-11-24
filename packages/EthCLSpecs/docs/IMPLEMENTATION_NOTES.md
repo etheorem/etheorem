@@ -2223,34 +2223,40 @@ The 17 lines that went are the 4 `box_generic` lines and 13 `tier1` lines. Each 
 One machine ran every measurement: 12th Gen Intel Core i5-12400F, 12 threads, 31 GiB.
 The sweeps ran with pytest `-n 6` and `--subset=0` on the `v1.7.0-beta.4` vectors. The
 base column is the stage 0 baseline on `d370c426`. The plain column is the Stage 5 gate,
-the first full matrix with every fork on the plain state. Task 10.3 fills the final column
-from the measurements of task 10.2.
+the first full matrix with every fork on the plain state. The final column is the task 10.2
+run at the epic head, which repeated every measurement of task 0.2 on the same machine and
+compared every case identity: all identical, no vector changed its answer.
 
 | Measurement | Base | Plain, Stage 5 gate | Final |
 |---|---:|---:|---:|
-| Full matrix, both presets, wall | 4524.0 s | 5475.1 s | pending |
-| Mainnet Fulu, wall | 155.27 s | 1674.37 s | pending |
-| Mainnet Gloas, wall | 2100.50 s | 1865.88 s | pending |
-| Mainnet Heze, wall | 2068.69 s | 1704.63 s | pending |
-| Minimal Fulu, wall | 23.40 s | 33.69 s | pending |
-| Minimal Gloas, wall | 88.03 s | 100.43 s | pending |
-| Minimal Heze, wall | 88.15 s | 96.09 s | pending |
-| Fulu `historical_accumulator` | 72.69 s | 1464.04 s | pending |
-| Gloas `historical_accumulator` | 1830.16 s | 1632.49 s | pending |
-| Heze `historical_accumulator` | 1906.84 s | 1570.79 s | pending |
-| Mainnet state root, one write then a root | 9.8 ms cached, 163.0 ms uncached | | pending |
-| `lake clean && lake build EthCLSpecs` | 25m03.5s | | pending |
+| Full matrix, both presets, wall | 4524.0 s | 5475.1 s | 5340.4 s |
+| Mainnet Fulu, wall | 155.27 s | 1674.37 s | 1538.72 s |
+| Mainnet Gloas, wall | 2100.50 s | 1865.88 s | 1818.06 s |
+| Mainnet Heze, wall | 2068.69 s | 1704.63 s | 1770.33 s |
+| Minimal Fulu, wall | 23.40 s | 33.69 s | 30.42 s |
+| Minimal Gloas, wall | 88.03 s | 100.43 s | 92.00 s |
+| Minimal Heze, wall | 88.15 s | 96.09 s | 90.89 s |
+| Fulu `historical_accumulator` | 72.69 s | 1464.04 s | 1388.56 s |
+| Gloas `historical_accumulator` | 1830.16 s | 1632.49 s | 1608.31 s |
+| Heze `historical_accumulator` | 1906.84 s | 1570.79 s | 1633.54 s |
+| Mainnet state root, one write then a root | 9.8 ms cached, 163.0 ms uncached | | 10.3 ms cached, 168.5 ms uncached |
+| `lake clean && lake build EthCLSpecs` | 25m03.5s | | 11m59.5s |
 
 Two other builds shared the machine during the Stage 5 minimal sweeps, so those three
 walls carry more noise than the band of about 3% seen at the base. The root row is
-CompBench `update1` (`just sizzlean-comp-benchmark`), mean of 100 runs.
+CompBench `update1` (`just sizzlean-comp-benchmark`), mean of 100 runs. The final run
+started at machine load 1.80 against the baseline's 0.41, and that drift, about +3.5% to
++12% on the unchanged bench rows, touches the final column too.
 
 `historical_accumulator` advances 8,192 slots and sets each mainnet wall. The wall per slot
-goes from 9 ms at Fulu, 223 ms at Gloas and 233 ms at Heze at the base to 179 ms, 199 ms and
-192 ms now; each slot now pays one full `BeaconState` root. The 157 ms plain root and the
-195 ms box rebuild in the pilot findings come from the one-core pilot probe. The
-mitigations considered, a root memo at the fork-choice store and a runner-side Merkle
-cache, are not built. The cost did not block the change.
+goes from 9 ms at Fulu, 223 ms at Gloas and 233 ms at Heze at the base to 170 ms, 196 ms and
+199 ms at the final tree; each slot now pays one full `BeaconState` root. The 157 ms plain
+root and the 195 ms box rebuild in the pilot findings come from the one-core pilot probe.
+The cold build halved against the baseline because the box-bridge proof layer left the
+tree (the two `KeepsUncached.lean` files, about 2,100 lines, and the `pureState` /
+`runPure` bridge proofs). The mitigations considered, a root memo at the fork-choice store
+and a runner-side Merkle cache, are not built; the store root memo is filed on GitHub as
+future work. The cost did not block the change.
 
 ### Pilot findings that still apply
 
@@ -2263,10 +2269,13 @@ Heze switched first, as the pilot. These findings hold for the tree after the ch
   about 195 ms a slot. A plain root costs about 157 ms, so Gloas and Heze run faster on
   the plain state. The Fulu `BeaconState` is a classic container, and the cached box
   rehashed only the changed spine, about 0.1 ms a slot. Fulu now pays a full root per
-  slot, which explains its mainnet growth.
+  slot, which explains its mainnet growth. The final matrix confirmed the split: mainnet
+  Gloas −13.4% and Heze −14.4% against the base, Fulu at 9.91 times its base wall.
 - **Write loops run faster on the plain state.** At the mainnet preset, Heze
   `epoch_processing/pending_deposits` took 0.83 times its base time,
-  `operations/attestation` 0.89 times and `operations/withdrawals` 0.90 times.
+  `operations/attestation` 0.89 times and `operations/withdrawals` 0.90 times. The final
+  bench agrees: the SizzLean batched-writes row runs 0.63 times its cached time, and the
+  pure/cached ratios did not move.
 - **`modify` costs a closure call unless it is inlined.** A bench of the `SSZList` and
   `Vector` wrapper bodies, called from a second module, measured the plain `def` at 37%
   above `set!` of `get!` over a million validators. The `@[inline]` copy matched `set!`.
