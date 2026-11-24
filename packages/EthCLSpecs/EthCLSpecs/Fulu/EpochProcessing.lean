@@ -493,8 +493,9 @@ forkdef processEffectiveBalanceUpdates : StateTransition Unit := do
   set state
 
 /-- `process_slashings_reset`: zero the next epoch's slashings slot. The index is in
-range by construction (`nextEpoch % EPOCHS_PER_SLASHINGS_VECTOR`), so the infallible
-`[idx]!` element write is total (fits the `modifyState` context, no reject path). -/
+range by construction (`nextEpoch % EPOCHS_PER_SLASHINGS_VECTOR`). The `set!` element
+write leaves the vector unchanged out of range, so it is total and fits the `modifyState`
+context with no reject path. -/
 forkdef processSlashingsReset : StateTransition Unit := do
   let nextEpoch ← (← getCurrentEpoch) + 1
   -- `nextEpoch % EPOCHS_PER_SLASHINGS_VECTOR` is the checked modulo; its in-range
