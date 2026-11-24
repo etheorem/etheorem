@@ -41,9 +41,10 @@ The last three shapes are local discharges, `Fin.isLt`, a non-emptiness hypothes
 `omega`, that `get_elem_tactic` closes at the read with no new lemma. The first two need
 the invariant lemmas, so they set the pace (see the constraint below).
 
-Outside this residual, and staying as they are: the `sszUpdate state with field[i]! := …`
-writes. The bang there is SizzLean's infallible symbolic-cap element write, total by
-design, not a masking read.
+Outside this residual, and staying as they are: the element writes
+`{ state with field := state.field.set! i v }` and `state.field.modify i f`. SizzLean's
+`set!` and `modify` leave the collection unchanged past the end. They are total by design,
+and they mask no read.
 
 ### Approach A: a proof parameter
 
@@ -52,9 +53,9 @@ optional proof, Lean's `autoParam`:
 
 ```lean
 forkdef getTotalBalance (state : State) (indices : Array ValidatorIndex)
-    (hvalid : ∀ i ∈ indices, i.toPlainNat < (sszGet state validators).size := by …) :
+    (hvalid : ∀ i ∈ indices, i.toPlainNat < state.validators.size := by …) :
     Checked Gwei := do
-  let validators := sszGet state validators
+  let validators := state.validators
   let total ← indices.attach.foldlM (fun acc ⟨i, hi⟩ =>
     acc + (validators[i.toPlainNat]'(hvalid i hi)).effectiveBalance) (0 : Gwei)
   return max total Const.effectiveBalanceIncrementG
@@ -76,11 +77,10 @@ spike on `getTotalBalance` with a `by sorry` default put the obligation at
 most call sites free is a small set of invariant lemmas the default tactic can find:
 
 - `getActiveValidatorIndices` returns in-range indices,
-  `∀ vi ∈ result, vi.toPlainNat < (sszGet state validators).size`, a loop invariant over its
+  `∀ vi ∈ result, vi.toPlainNat < state.validators.size`, a loop invariant over its
   `for h : i in [0 : validators.size]` and the checked `CLUint64.ofNat? i` cast.
-- the parallel-length invariant `(sszGet state balances).size = (sszGet state
-  validators).size`, for the reward and penalty reads that index `balances` at a validator
-  index.
+- the parallel-length invariant `state.balances.size = state.validators.size`, for the
+  reward and penalty reads that index `balances` at a validator index.
 
 With those registered for `grind` / `aesop`, the `autoParam` default discharges at the
 call sites and the consumers read as before.
@@ -91,7 +91,7 @@ Bundle the proof into the index-list type instead of a per-call argument:
 
 ```lean
 abbrev ValidIndices (state : State) :=
-  { idx : Array ValidatorIndex // ∀ i ∈ idx, i.toPlainNat < (sszGet state validators).size }
+  { idx : Array ValidatorIndex // ∀ i ∈ idx, i.toPlainNat < state.validators.size }
 ```
 
 `getActiveValidatorIndices` returns `Checked (ValidIndices state)`, proving validity once
