@@ -41,9 +41,9 @@ builds each "framework generates" cell; `SPECS_ARCHITECTURE.md` consumes each
 
 **The fast-versus-pure duality.** The framework pre-bundles exactly two
 configurations. The *fast* configuration backs the pyspec test runner; it
-uses `EStateM` and a cached `Box`. The *pure* configuration backs proofs; it
-uses `StateT` over `Except` and an uncached `Box`. The spec body is generic over
-both and names neither. The runner, which the framework owns, instantiates the
+uses `EStateM` and the FFI hasher. The *pure* configuration backs proofs; it
+uses `StateT` over `Except` and the pure-Lean hasher. Both thread the same plain
+`BeaconState`. The spec body is generic over both and names neither. The runner, which the framework owns, instantiates the
 fast configuration. A per-fork theorems module, separate from the spec body,
 instantiates the pure one. This invariant is stated identically in all three
 documents. Authors never see it. Section 3 derives it.
@@ -91,9 +91,8 @@ actions that name no concrete monad. Section 3 says why.
 The author owns the consensus logic. Everything in the six deliverables above is
 the author's, including the helpers that do not change from one fork to the
 next. The framework owns the plumbing: the arithmetic, the SSZ machinery, the
-crypto mechanics, the effect monad, the finite-map backing, and the box
-representation. None of the framework's parts mentions a validator, an epoch, a
-balance, or a `State`.
+crypto mechanics, the effect monad, and the finite-map backing. None of the
+framework's parts mentions a validator, an epoch, a balance, or a `State`.
 
 This is the *domain line*, and it has one sharp test. If a helper names a
 consensus concept, it is spec-owned, even when its body is identical across
@@ -141,16 +140,15 @@ one, and the readable one wins.
 
 ### 3.1 The duality
 
-The framework bundles four implementation axes, the effect monad, the
-Merkleization hasher, the finite-map backing, and the box flavour, into two
-named configurations.
+The framework bundles three implementation axes, the effect monad, the
+Merkleization hasher, and the finite-map backing, into two named configurations.
+Both columns thread the same state type, the plain `BeaconState`.
 
 | Axis | `fast` (the runner) | `pure` (proofs) |
 |---|---|---|
 | Effect monad | `EStateM StateTransitionError State` | `StateT State (Except StateTransitionError)` |
 | Hasher | `Sha256` (FFI, opaque) | `Sha256Spec` (pure-Lean, kernel-reducible) |
 | Fork-choice map | `hashMap` | `treeMap` |
-| Box flavour | `FastBox` (cached, `= CachedBox Sha256`) | `UncachedBox HasherTag.H` (uncached) |
 
 The effect-monad row covers both machines. A fork-choice handler runs the state
 machine through `runNestedStateTransition`, and `NestedStateMachine`
@@ -162,10 +160,10 @@ picked once rather than per machine.
 The spec body is generic over every axis and commits to neither column. The
 test runner, which the framework owns, instantiates the fast column. A per-fork
 theorems module, which sits outside the spec body, instantiates the pure column.
-Both columns elaborate from the same source. The runner gets native speed and a
-warm cache; the proofs get a kernel-reducible hasher, uncached getters and
-setters whose laws hold by `rfl`, and a deterministic key order. The author
-writes once and gets both.
+Both columns elaborate from the same source. The runner gets native speed and
+in-place updates of the state's arrays. The proofs get a kernel-reducible hasher,
+a deterministic key order, and plain record reads and writes whose laws hold by
+`rfl`. The author writes once and gets both.
 
 ### 3.2 The section pattern, and why the header is generated
 
@@ -181,7 +179,7 @@ the `variable` line:
 ```lean
 -- once, in the State module, after the BeaconState container:
 state_preamble BeaconState
---   abbrev State := Box HasherTag.H BeaconState
+--   abbrev State [Preset] : Type := BeaconState      -- the plain record
 --   def modifyState (f : State → State) … := …        -- concrete-domain updater
 
 -- at each section (the macro opens the `section`; close it with `end`):
@@ -226,14 +224,14 @@ A fork-choice section uses the companion macro, which likewise opens the `sectio
 fork_choice_section map
 --   variable [Preset] [HasherTag]
 --   variable [Config] [CryptoBackend]
---   variable {map : MapKind} [FcMap map]   -- Store map's container fields boxed
+--   variable {map : MapKind} [FcMap map]   -- the backing of Store map's maps
 --   variable {StoreTransition : Type → Type}
 --   variable [Monad StoreTransition]
 --   variable [MonadStateOf (Store map) StoreTransition]
 --   variable [MonadExceptOf StoreTransitionError StoreTransition]
 ```
 
-The fork-choice map cannot hide the way the hasher and the box flavour do. It
+The fork-choice map cannot hide the way the hasher does. It
 appears in the `Store` type itself, since the store's map-valued fields are
 typed `map K V`. So `Store hashMap` and `Store treeMap` are genuinely distinct
 types that coexist with no ambient "current" map, and a fork-choice section
@@ -276,12 +274,9 @@ before it appears downstream.
 | `HasherTag` | The framework selector class carrying the chosen hasher as the field `HasherTag.H`. |
 | `Sha256` | The FFI hasher tag (opaque, fast); the fast configuration's hasher. |
 | `Sha256Spec` | The pure-Lean hasher tag (kernel-reducible); the pure configuration's hasher. |
-| `State` | The fork's `BeaconState` viewed as an SSZ box: `Box HasherTag.H BeaconState`. |
-| `getStateRoot` | The Merkle root of the threaded `State`, taken inside a step; keeps the cache-warmed box (`modifyGet`-shaped). |
-| `stateRoot` | The Merkle root of a `State` value in hand, with the cache-warmed box; the lossless pure form for a non-monadic context that threads the box by hand. |
-| `stateRoot!` | The Merkle root of a `State` value in hand, discarding the cache-warmed box; terminal-only (the `!` marks the discard, never a panic). |
-| `sszGet` | Field read on a boxed value. |
-| `sszUpdate` | Single-field write on a boxed value, carrying the size-proof discharge and cache maintenance. |
+| `State` | The fork's `BeaconState` record itself, the abbrev `state_preamble` declares. A read is a field projection, `state.slot`; a write is a record update, `{ state with slot := s }`. |
+| `getStateRoot` | The Merkle root of the threaded `State`, taken inside a step. It merkleizes the whole record and leaves the state unchanged. It is the one seam for that read; a state held as a value takes its root with `htr`, as any container does. |
+| `modify` | The element update on an SSZ collection (`SSZList`, `ProgressiveList`, `Vector`), from SizzLean. `xs.modify i f` applies `f` to element `i`. An index out of range leaves `xs` unchanged, as `set!` does. A step writes `{ state with balances := state.balances.modify i f }`. |
 | `modifyState` | Multi-field update of the threaded state; the per-fork updater `state_preamble` emits, with a concrete `State → State` domain so a step writes `modifyState fun state => …` without a binder annotation. |
 | `assert` | The macro for a spec assertion; renders its expression into a diagnostic descriptor and throws the section's `assert` reject (`StateTransitionError` in a state section, `StoreTransitionError` in a fork-choice section, resolved through `SpecReject`). |
 | `SpecReject` | The class mapping a descriptor to an error type's `assert` / `todo` reject, so the one `assert` / `todo` work in both machines. |
@@ -315,7 +310,7 @@ before it appears downstream.
 | The spec-revision pin | The latest upstream spec version a fork's suite passes against, recorded as `pyspecPinnedVersion` (Section 10). |
 | The fork interface | The fixed entry-point signatures a fork must satisfy so `PySpecTests` can drive it, each entry point independently invocable (Section 11). |
 | The inheritance mechanism | Raw syntax captured by the declaration forms and replayed in the child namespace, where unqualified references late-bind to the child's overrides; the `fork … from …` declaration names each fork's parent (Section 7). |
-| The injection seams | The external factors the framework abstracts behind typeclass injection (`FcMap` / `MapKind`, `[HasherTag]`, `[CryptoBackend]`, the box flavour, the monad), so a client substitutes production, caching, or symbolic implementations. The seams section of `FRAMEWORK_ARCHITECTURE.md` owns the detail. |
+| The injection seams | The external factors the framework abstracts behind typeclass injection (`FcMap` / `MapKind`, `[HasherTag]`, `[CryptoBackend]`, the monad), so a client substitutes production, caching, or symbolic implementations. The seams section of `FRAMEWORK_ARCHITECTURE.md` owns the detail. |
 
 ---
 
@@ -334,7 +329,7 @@ order, so they map one to one.
 | **Container types** as a field list under `forkcontainer` | the dependent `structure`, the derived `SSZRepr` (serialize, deserialize, hash-tree-root) plus `Inhabited` / `BEq` / `DecidableEq` / `Ord` / `Hashable`, and the fork-incremental inheritance | the container front-end |
 | **Consensus-domain helpers** (`get_*` / `compute_*` / `is_*`, committees, shuffling) whole; state-free ones pure, state-reading accessors monadic | nothing by the domain line; the framework supplies only the primitives the other rows list | (empty cell, by Section 2.2) |
 | **State-transition steps** as `forkdef` bodies over `StateTransition`, composed into the ordered pipeline | the section header (`state_preamble` / `state_section`), the monad and its constraints, and the discharge (`runNestedStateTransition`) | the effect-monad architecture, the header macros |
-| **Field access and assertions** via `sszGet` / `sszUpdate` / `modifyState` / `assert` | the access primitives, the size-proof discharge, the cache maintenance, the `assert` descriptor rendering | the state representation, the error model |
+| **Field access and assertions** as field projections and record updates (`state.f`, `{ state with … }`, `.set!` / `.modify`), with `modifyState` / `appendState` / `sszGetIdx` / `getStateRoot` / `assert` | `modifyState` through the preamble, the list-append and raising-read helpers, the state root seam, the `assert` descriptor rendering; Lean's record syntax and SizzLean's collection methods do the reads and writes | the state representation, the error model |
 | **Fork-choice `on_*` handlers** as `StoreTransition` actions over the `Store` | `FcMap`, `Store`, and the step/check driver | the finite-map and fork-choice store |
 | **Lifecycle functions** (`initializeBeaconStateFromEth1`, `isValidGenesisState`, `upgradeToGloas`) over the container constructors | the container constructors and the `genesis` / `fork` harness drivers | the container front-end, the conformance framework |
 | **Arithmetic** in the checked types (`CLUint64` and its unit abbreviations, `CLUint8`, `CLInt`), each fallible expression bound with `←` (`SPEC_ARITHMETIC.md`) | the checked operator matrix and its `Checked` results, the lift into both machines, the conversions (`toCLInt`, `toCLUint64?`, `ofNat?`, `toPlainNat`), `PositiveDivisor`, `saturatingSub`, `integerSquareroot`, the scoped operator elaborator, and the success and value laws | the arithmetic layer |
@@ -351,54 +346,63 @@ drivers.
 
 ## 6. The `State` from the author's view
 
-`State` is the fork's `BeaconState` wrapped in an SSZ box:
+`State` is the fork's `BeaconState` record itself. `state_preamble` declares it:
 
 ```lean
-abbrev State := Box HasherTag.H BeaconState
+abbrev State [Preset] : Type := BeaconState
 ```
 
-The author reads a field with `sszGet`, writes one with `sszUpdate`, and takes
-the Merkle root with `getStateRoot` (or the terminal-only `stateRoot!`). The author
-never constructs or unwraps the box, and never names the hasher.
+The author reads and writes it with Lean's own record syntax. A read is a field
+projection, `state.slot`. A write is a record update, `{ state with slot := nextSlot }`,
+and one update can set several fields. An element write calls a method of the SSZ
+collection inside the update: `set!` replaces element `i`, and `modify` applies a
+function to it. The author takes the Merkle root of the threaded state with
+`getStateRoot`, and never names the hasher.
 
 ```lean
--- Read the current slot, write a new one, take the post-state root.
-def processSlot : StateTransition Unit := do
-  let state ← get
-  let nextSlot ← (sszGet state slot) + 1
-  set (sszUpdate state with slot := nextSlot)
-  -- elsewhere, when a vector wants the post-state root:
-  --   let root ← getStateRoot
+-- Cache the state root at `state_roots[slot % SLOTS_PER_HISTORICAL_ROOT]`.
+def cacheStateRoot : StateTransition Unit := do
+  let prevStateRoot : Root := bytesToRoot (← getStateRoot)
+  modifyState fun state =>
+    let idx := (state.slot % Const.slotsPerHistoricalRootDiv).toPlainNat
+    { state with stateRoots := state.stateRoots.set! idx prevStateRoot }
+
+-- Apply `f` to balance `i`.
+def modBalance (state : State) (i : ValidatorIndex) (f : Gwei → Gwei) : State :=
+  { state with balances := state.balances.modify i.toPlainNat f }
+
+-- Gloas: set one field of builder `i`. The function is itself a record update.
+def setBuilderBalance (state : State) (i : Nat) (newBalance : Gwei) : State :=
+  { state with builders := state.builders.modify i fun builder =>
+      { builder with balance := newBalance } }
 ```
 
-The box carries two things the author does not see, both invisible because the
-type system makes them so.
+`modify` names the field and the index once, where `set! i (f xs[i]!)` names them
+twice. It also moves the element out of the array before it calls `f`, so `f` can
+update a large element, a validator record, in place. The two spellings are equal, and
+SizzLean proves it. An index out of range leaves the collection unchanged, as `set!`
+does, where the pyspec raises `IndexError`. So an index that can fall outside the
+collection goes through the raising read `sszGetIdx` (Section 7) before the write.
 
-The first is the hasher, selected by the `[HasherTag]` instance. The fast
-configuration and symbolic transition proofs use `Sha256`, the FFI hasher kept
-opaque: equality of two roots follows from the same hash over the same buffers,
-with no concrete bytes needed. Proofs that must reduce a root to concrete bytes
-in the kernel use `Sha256Spec`, the pure-Lean reference. One spec body serves
-every choice. SizzLean's `Hasher (H)` class stays untouched, which is what keeps
-its two-hasher equivalence proofs valid.
+The state carries no hasher. A declaration that hashes (`getStateRoot`, `htr`, `sha`)
+takes `[HasherTag]` from the section variables, and the instance selects the hasher.
+The fast configuration and symbolic transition proofs use `Sha256`, the FFI hasher kept
+opaque: equality of two roots follows from the same hash over the same buffers, with no
+concrete bytes needed. Proofs that must reduce a root to concrete bytes in the kernel
+use `Sha256Spec`, the pure-Lean reference. One spec body serves every choice.
+SizzLean's `Hasher (H)` class stays untouched, which is what keeps its two-hasher
+equivalence proofs valid.
 
-The second is the cache flavour. The flavour constructors are `CachedBox H` (cached)
-and `UncachedBox H` (uncached), generic over the hasher tag, both producing
-`Box H BeaconState`. They differ in flavour, not in type. SizzLean's `FastBox` and
-`PureBox` are the `Sha256`-pinned aliases (`FastBox = CachedBox Sha256`), so the fast
-configuration is `FastBox` and the pure configuration is the uncached constructor at
-the generic hasher tag, `UncachedBox HasherTag.H`
-(`SPECS_ARCHITECTURE.md` §11.1). The flavour is chosen once, at the anchor where the state
-is first built: cached for runner speed, uncached so the getter-setter laws hold by
-`rfl` with no cache-coherence obligation in the proofs.
+The state carries no Merkle tree either. Each `getStateRoot` merkleizes the whole
+record. It is the one seam for the root of the threaded state, so a runner that keeps
+a tree beside the state has one call to intercept. A state held as a value, such as a
+`Store` entry, takes its root with `htr`, as any container does.
 
 So the type-level fast-versus-pure split is the monad alone. The hasher is an
-instance and the flavour is a constructor choice; both are orthogonal to the
-monad and both stay invisible to the author. The fork-choice map is the one axis
-that cannot hide, because `map` lands in `Store`'s own type. The container front
-end never boxes a value on its own; the `State` abbrev above and the `Store`'s
-boxed fields are the only places a box is named, and `sszGet` / `sszUpdate`
-operate only on a box, so a raw value can never be read by mistake.
+instance, orthogonal to the monad and invisible to the author. The fork-choice map is
+the one axis that cannot hide, because `map` lands in `Store`'s own type. The `Store`
+holds plain states as well: `blockStates` and `checkpointStates` map keys to `State`
+values.
 
 ---
 
@@ -406,31 +410,35 @@ operate only on a box, so a raw value can never be read by mistake.
 
 A spec step uses a small, closed set of primitives. Anything outside this set
 should not appear in a step body. Each primitive maps to its `pyspec`
-equivalent.
+equivalent. Field reads and writes use Lean's record syntax and the SSZ collection
+methods, so the first four rows are plain Lean and SizzLean. The framework adds the
+rest.
 
 | Primitive | `pyspec` equivalent | What it does |
 |---|---|---|
+| `state.field` | `state.field` | Reads `field`, a plain projection of the record. |
+| `{ state with field := value }` | `state.field = value` | Writes `field` and returns the new record. One update sets several fields. |
+| `{ state with xs := state.xs.set! i v }` | `state.xs[i] = v` | Replaces element `i` of the collection field `xs`. Out of range it leaves `xs` unchanged. |
+| `{ state with xs := state.xs.modify i f }` | `state.xs[i] = f(state.xs[i])`, or several `state.xs[i].g = …` lines | Applies `f` to element `i` in place. Out of range it leaves `xs` unchanged. |
 | `assert cond` | `assert cond` | Renders `cond`'s syntax into a diagnostic descriptor and throws `StateTransitionError.assert descr` when it fails. The author writes no message; the failure describes itself. |
-| `sszGet state field` | `state.field` | Reads `field` from the boxed `state`. |
-| `sszUpdate state with field := value` | `state.field = value` | Writes `field`, returning a new box; carries the size-proof discharge and cache maintenance. |
-| `modifyState fun state => …` | several `state.field = …` lines | Updates several fields of the threaded state at once. |
+| `modifyState fun state => …` | one or more `state.field = …` lines | Applies a record update to the threaded state. |
 | `appendState field v` | `state.field.append(v)` | Appends `v` to a list field of the threaded state. On a full list it throws `StateTransitionError.listFull`, as the spec's append raises. |
 | `setOrAppendState field i v` | `set_or_append_list(state.field, i, v)` | Appends `v` when `i` is the list's length, overwrites entry `i` inside the list, and throws `outOfBounds` past the end. |
 | `← sszOfArrayM "field" a` | `List[T, N](a)` | Builds a list from an array of any size. On too many elements it throws `StateTransitionError.listFull`, as the spec's constructor raises. An array of fixed size uses `sszOfArray a`, which takes a proof that it fits. |
-| `getStateRoot` | `hash_tree_root(state)` | Takes the threaded state's Merkle root, keeping the cache-warmed box so a later root reuses the tree. |
-| `sszGetIdx xs i` / `bitlistGetIdx bs i` | `xs[i]` | Reads element `i` of an untrusted or parameter index. `sszGetIdx` takes a `Nat`, a `CLUint64`, or a `CLInt` index (`SPEC_ARITHMETIC.md` §4.6), and `bitlistGetIdx` a `Nat`; an out-of-range index surfaces as the typed reject `outOfBounds idx bound` through `liftErr`, never a crash. |
+| `getStateRoot` | `hash_tree_root(state)` | Takes the threaded state's Merkle root, a full merkleization of the record. The state is unchanged. |
+| `sszGetIdx xs i` / `bitlistGetIdx bs i` | `xs[i]` | Reads element `i` of an untrusted or parameter index, as in `sszGetIdx state.validators i`. `sszGetIdx` takes a `Nat`, a `CLUint64`, or a `CLInt` index (`SPEC_ARITHMETIC.md` §4.6), and `bitlistGetIdx` a `Nat`; an out-of-range index surfaces as the typed reject `outOfBounds idx bound` through `liftErr`, never a crash. |
 | `xs[i]'h.down`, after `let h ← assertH (i < size)` | `xs[i]` | Proof-carrying read of an index a validation has checked; total, no reject branch, the bad index rejected at the `assertH`. |
 | `liftErr (getAt xs i)` / `liftErr (setAt xs i v)` | `xs[i]` / `xs[i] = v` on a local list | The pure read and write with the same index kinds as `sszGetIdx`; a miss is `outOfBounds`. |
 | do-block sequencing | statement sequence | Threads the monad; `let x ← …` binds an effectful result or a `Checked` arithmetic expression, plain `let` a pure one (`SPEC_ARITHMETIC.md` §4.3). |
 
 ```lean
 def incrementSlot : StateTransition Unit := do
-  let nextSlot ← (sszGet (← get) slot) + 1
-  modifyState fun state => sszUpdate state with slot := nextSlot
+  let nextSlot ← (← get).slot + 1
+  modifyState fun state => { state with slot := nextSlot }
 
 def checkSlot (expected : Slot) : StateTransition Unit := do
   let state ← get
-  assert (sszGet state slot == expected)
+  assert (state.slot == expected)
 ```
 
 A word on the `assert` descriptor. It is a `String`, but a diagnostic one,
@@ -683,7 +691,7 @@ of its own.
 
 Dependencies flow one way, and the framework and spec body are separate packages, so
 the framework cannot import the spec and the layering is build-enforced. The framework
-builds on SizzLean (the SSZ machinery, `Box`, `Hasher`) and the crypto FFI (BLS, KZG).
+builds on SizzLean (the SSZ machinery, the collection types, `Hasher`) and the crypto FFI (BLS, KZG).
 The spec body builds on the framework. The theorems module builds on the spec body.
 `PySpecTests` splits along the fork interface: its generic driver lives in the
 framework and is written against that interface, so it builds on no concrete spec,
