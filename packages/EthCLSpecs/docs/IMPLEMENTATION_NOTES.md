@@ -1086,8 +1086,8 @@ separation.
   `EthCLSpecs.Proofs.Gloas`. It characterizes Gloas `processOperations` at
   `GloasRun`; handlers and later failure postconditions remain opaque. Every
   statement takes the beta.4 `parentSlot` argument, and the attestation fold is
-  `processAttestation · parentSlot`. The success characterization splits over five
-  plain intermediate states, one per operation-family loop, with `run_bind`
+  `processAttestation · parentSlot`. The success characterization splits the six
+  operation-family loops over five plain intermediate states, with `run_bind`
   (`EthCLLib/Proofs/Run.lean`). Each loop's post-state is already a plain value, so the
   split needs no fact about the handler bodies.
 
@@ -1494,7 +1494,7 @@ the Epic Lead can sequence them without losing the original findings.
    `CLAUDE.md` omits LeanRlp from its package list. `docs/monorepo-arch.md` understates
    the document set. SizzLean's plan/README carry old C-shim paths, its architecture
    omits Heze from the container list, and SizzLean/hazmat carry old fork ranges.
-   The Gloas proof index reached a framework proof module transitively; the
+   The Gloas proof index reached a Gloas proof module transitively; the
    *Plain-value state record* below lists that module as deleted. Generated coverage
    blocks stay owned by `proof-coverage-update`. These are the reported link/status
    observations; 9.4 must check their current disposition before editing.
@@ -2245,8 +2245,10 @@ Two other builds shared the machine during the Stage 5 minimal sweeps, so those 
 walls carry more noise than the band of about 3% seen at the base. The root row is
 CompBench `update1` (`just sizzlean-comp-benchmark`), mean of 100 runs.
 
-`historical_accumulator` advances 8,192 slots and sets each mainnet wall. Each slot now
-pays one full `BeaconState` root: 179 ms at Fulu, 199 ms at Gloas, 192 ms at Heze. The
+`historical_accumulator` advances 8,192 slots and sets each mainnet wall. The wall per slot
+goes from 9 ms at Fulu, 223 ms at Gloas and 233 ms at Heze at the base to 179 ms, 199 ms and
+192 ms now; each slot now pays one full `BeaconState` root. The 157 ms plain root and the
+195 ms box rebuild in the pilot findings come from the one-core pilot probe. The
 mitigations considered, a root memo at the fork-choice store and a runner-side Merkle
 cache, are not built. The cost did not block the change.
 
