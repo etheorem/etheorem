@@ -50,9 +50,9 @@ crypto packages own. The fork-agnostic `ssz_generic` wire-format vectors run in
 
 ## Advantages
 
-**One source, fast to run and ready to prove.** The spec body is generic over
-its hasher, its boxing, and its monad. The runner picks a fast configuration:
-native FFI SHA-256, a warm Merkle cache. That same source also elaborates at a
+**One source, fast to run and ready to prove.** The spec body holds the beacon
+state as a plain SSZ record, and it is generic over its hasher and its monad.
+The runner picks native FFI SHA-256. That same source also elaborates at a
 pure, kernel-reducible configuration, which keeps the door open for
 machine-checked proofs in a later package. The author names neither one.
 
@@ -65,7 +65,7 @@ can audit the Lean line by line.
 ```lean
 /-- `process_block` (Gloas ordering, EIP-7732). -/
 forkdef processBlock (block : BeaconBlock) : StateTransition Unit := do
-  let parentSlot := (sszGet (← get) latestBlockHeader).slot
+  let parentSlot := (← get).latestBlockHeader.slot
   processParentExecutionPayload block
   processBlockHeader block
   processWithdrawals
