@@ -33,28 +33,29 @@ indices are the checked slots reduced by the proved-total divisor view
 (`SPEC_ARITHMETIC.md` §4.2); `toPlainNat` names the structural vector index the result
 narrows to (§4.5). The availability clear runs as its own step, after the caching, because
 its index needs the pyspec's checked `state.slot + 1`, which binds in the transition monad
-(the `Id.run` caching body is pure); no raise can land between the two writes. -/
+(the `Id.run` caching body is pure); no raise can land between the two writes. The state
+root comes from `getStateRoot`, the one seam for the root of the threaded state, before the
+caching body runs. -/
 forkdef processSlot : StateTransition Unit := do
+  let prevStateRoot : Root := bytesToRoot (← getStateRoot)
   modifyState fun state => Id.run do
-    let (prevStateRootBytes, state) := stateRoot state
     let mut state := state
-    let prevStateRoot : Root := bytesToRoot prevStateRootBytes
-    let idx := ((sszGet state slot) % Const.slotsPerHistoricalRootDiv).toPlainNat
+    let idx := (state.slot % Const.slotsPerHistoricalRootDiv).toPlainNat
 
     -- Cache the previous state root, backfill it into the latest header, then cache that
     -- header's block root.
-    state := sszUpdate state with stateRoots[idx]! := prevStateRoot
-    let latestHeader := sszGet state latestBlockHeader
+    state := { state with stateRoots := state.stateRoots.set! idx prevStateRoot }
+    let latestHeader := state.latestBlockHeader
     let latestHeader := if latestHeader.stateRoot == Fulu.zeroRoot then { latestHeader with stateRoot := prevStateRoot } else latestHeader
-    state := sszUpdate state with latestBlockHeader := latestHeader
-    let blockRoot := htr (sszGet state latestBlockHeader)
-    state := sszUpdate state with blockRoots[idx]! := blockRoot
+    state := { state with latestBlockHeader := latestHeader }
+    let blockRoot := htr state.latestBlockHeader
+    state := { state with blockRoots := state.blockRoots.set! idx blockRoot }
     return state
   -- Gloas addition: the next slot's payload starts unavailable.
-  let next ← (sszGet (← get) slot) + 1
+  let next ← (← get).slot + 1
   let nextIdx : Nat := (next % Const.slotsPerHistoricalRootDiv).toPlainNat
-  modifyState fun state => sszUpdate state with executionPayloadAvailability :=
-    bitSet (sszGet state executionPayloadAvailability) nextIdx false
+  modifyState fun state => { state with
+    executionPayloadAvailability := bitSet state.executionPayloadAvailability nextIdx false }
 
 /-- `process_epoch` (Gloas ordering): `process_builder_pending_payments` after the
 pending-consolidations step, and `process_ptc_window` last (EIP-7732). -/
@@ -84,15 +85,15 @@ checked add where Python forms it, then the modulo takes the proved-total diviso
 the store's `state.slot = state.slot + 1` re-forms the sum as Python does
 (`SPEC_ARITHMETIC.md` §4.2, §4.5). -/
 forkdef processSlots (target : Slot) : StateTransition Unit := do
-  assert ((sszGet (← get) slot) < target)
-  let diff ← target - (sszGet (← get) slot)
+  assert ((← get).slot < target)
+  let diff ← target - (← get).slot
   for _ in [0:diff.toPlainNat] do
     processSlot
-    let next ← (sszGet (← get) slot) + 1
+    let next ← (← get).slot + 1
     let atBoundary : Slot := next % Const.slotsPerEpochDiv
     if atBoundary == 0 then processEpoch
-    let nextSlot ← (sszGet (← get) slot) + 1
-    modifyState fun state => sszUpdate state with slot := nextSlot
+    let nextSlot ← (← get).slot + 1
+    modifyState fun state => { state with slot := nextSlot }
 
 /-- `process_operations` (Gloas, EIP-7732, `gloas/beacon-chain.md:2228-2263`): no in-block
 deposits, no execution-request loops (those run in `process_parent_execution_payload`), and
@@ -118,7 +119,7 @@ forkdef processOperations (body : BeaconBlockBody) (parentSlot : Slot) : StateTr
 block's slot is read first, before `process_block_header` replaces the latest header, and
 reaches `process_operations` (new at v1.7.0-beta.4). -/
 forkdef processBlock (block : BeaconBlock) : StateTransition Unit := do
-  let parentSlot := (sszGet (← get) latestBlockHeader).slot
+  let parentSlot := (← get).latestBlockHeader.slot
   processParentExecutionPayload block
   processBlockHeader block
   processWithdrawals
