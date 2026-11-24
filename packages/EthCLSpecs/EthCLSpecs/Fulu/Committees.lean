@@ -8,7 +8,7 @@ committee assignment (`get_beacon_committee`), the balance-weighted sampler
 (`compute_balance_weighted_selection`) used for proposer and sync-committee
 selection, and `get_next_sync_committee`.
 
-These are pure functions of the boxed `State` (no monad); the epoch and operation
+These are pure functions of the plain `State` (no monad); the epoch and operation
 steps call them. They hash through the `[HasherTag]` seam (`sha`), so the same
 swap-or-not bytes a real client computes. Performance is unoptimised but adequate
 for the minimal preset: the permutation is recomputed per committee, and the
@@ -97,7 +97,7 @@ forkdef getSeed (state : State) (epoch : Epoch) (domainType : ByteArray) :
   let mixSlot ← shifted - 1
   let mixIdx ← mixSlot % Const.epochsPerHistoricalVectorC
   pure (bytesToRoot (sha (domainType ++ uint64ToBytes epoch.val ++
-    vmodGet (sszGet state randaoMixes) mixIdx.val Const.epochsPerHistoricalVector)))
+    vmodGet state.randaoMixes mixIdx.val Const.epochsPerHistoricalVector)))
 
 /-- `get_committee_count_per_slot` (`fulu/minimal.py:1485-1497`):
 `max(Uint64(1), min(MAX_COMMITTEES_PER_SLOT, Uint64(len(active)) // Uint64(SLOTS_PER_EPOCH)
@@ -233,7 +233,7 @@ forkdef computeBalanceWeightedSelection (state : State) (indices : Array Validat
     Except StateTransitionError (Array ValidatorIndex) := do
   let total := indices.size
   assert (total > 0)
-  let validators := sszGet state validators
+  let validators := state.validators
   let effBals ← indices.mapM fun vi => do
     let validator ← liftErr (getAt validators vi)
     pure validator.effectiveBalance
@@ -272,7 +272,7 @@ forkdef computeProposerIndices (state : State) (epoch : Epoch) (seed : Bytes32)
 length is the preset product, so the call passes the `d ≤ n` bound: `1 ≤
 MIN_SEED_LOOKAHEAD + 1`. -/
 forkdef getBeaconProposerIndex (state : State) : ValidatorIndex :=
-  vmodGet (sszGet state proposerLookahead) (sszGet state slot).val Const.slotsPerEpoch
+  vmodGet state.proposerLookahead state.slot.val Const.slotsPerEpoch
     (hle := Nat.le_mul_of_pos_left Const.slotsPerEpoch
       (Nat.succ_pos Const.minSeedLookahead.toPlainNat))
 
@@ -315,7 +315,7 @@ forkdef getNextSyncCommittee [CryptoBackend] (state : State) :
     Except StateTransitionError SyncCommittee := do
   let indices ← getNextSyncCommitteeIndices state
 
-  let validators := sszGet state validators
+  let validators := state.validators
   let selected ← indices.mapM fun vi => do
     let validator ← liftErr (getAt validators vi)
     pure validator.pubkey

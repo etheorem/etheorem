@@ -41,7 +41,7 @@ forkdef addValidatorToRegistry (pubkey : BLSPubkey) (wc : Bytes32) (amount : Gwe
   let state ← get
   -- `get_index_for_new_validator(state)` (`fulu/minimal.py:4317-4318`):
   -- `ValidatorIndex(len(state.validators))`, the pyspec's checked cast of the plain length.
-  let index ← CLUint64.ofNat? (sszGet state validators).val.size
+  let index ← CLUint64.ofNat? state.validators.val.size
   let validator ← getValidatorFromDeposit pubkey wc amount
   setOrAppendState validators index validator
   setOrAppendState balances index amount
