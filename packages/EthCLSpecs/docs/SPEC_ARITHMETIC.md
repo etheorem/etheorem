@@ -3,10 +3,10 @@
 The required arithmetic behavior and authoring rules for all consensus-spec code in
 `EthCLSpecs`, supported by the arithmetic layer in `EthCLLib`.
 
-This document prescribes the final state. It remains the contract for future additions
+This document defines the implemented arithmetic contract. It governs future additions
 and spec re-pins. Sections 1 to 3 describe the pinned behavior; Sections 4 to 7 prescribe
-the implementation and its use. The temporary [SPEC_ARITHMETIC_PLAN.md](SPEC_ARITHMETIC_PLAN.md)
-records the transition from the current implementation and is removed when that work ends.
+the implementation and its use. The spec arithmetic completion record in
+[IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md) records the transition to this contract.
 
 Pin: `v1.7.0-beta.4`, with `eth-ssz-specs` 0.1.0 as the pyspec's integer library. Line citations
 (`<file>.md:NN`) resolve under `specs/` in `ethereum/consensus-specs` at the pin. Every re-pin
@@ -667,6 +667,32 @@ and configuration fields throughout `EthCLSpecs`.
 Source review and behavior tests establish adherence to the bind rules. Changes to the
 arithmetic framework also record build and run-time costs. Prefer a cheaper equivalent
 implementation when measurements support it; preserve the semantic contract at any cost.
+
+The accepted `specs-arithmetics` measurements below are the baseline for a new
+measurement. The completion record in [IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md)
+holds their anchors, full comparisons, and method detail.
+
+| Measurement | Accepted value |
+|---|---|
+| Cold build | 25m29.8s, 621 jobs |
+| No-op build | 0.443s |
+| Incremental build | 6m08.3s |
+| Profile, `ForkInterface.stateRoot BeaconState` median | 264.66 ms |
+| Profile, `ForkInterface.runBlocks` median | 600.32 ms |
+| Epoch suite, Gloas mainnet `epoch_processing` | 125.08s |
+
+The builds follow one recipe: warm-up, cold, no-op, incremental, restore. The cold build
+is `lake clean && lake build EthCLSpecs`. The incremental build appends one line to
+`EthCLSpecs/Fulu/Time.lean` and rebuilds. Every step ran sequentially and alone on the
+machine, on 12 cores with Lake default parallelism and pytest `-n 6`. The profile rows
+are the two headline medians of `just ethcl-profile` on the Gloas mainnet
+`sanity/blocks` vector `full_random_operations_0`. The epoch suite is the Gloas mainnet
+`epoch_processing` handler, 154 cases; the table value is the second of two runs.
+
+Run-to-run variance is real, and a new measurement must allow for it: the two
+epoch-suite runs sat 6.4s (5.1%) apart, and the builds moved within 3.3% against the
+recorded anchors. Two causes stay unknown: the share of background load in that build
+spread, and the first epoch run's extra 6.4s.
 
 ## 8. Checking this document against a pin
 

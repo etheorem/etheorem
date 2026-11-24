@@ -51,7 +51,7 @@ pure `Bool`, so it returns `false` there, and the caller's `assert` raises the a
 The runner catches both classes, so the vector outcome agrees. The pubkey reads go through
 `getAt`, so the range test is the size-aware index interface's own. -/
 forkdef isValidIndexedAttestation (state : State) (a : IndexedAttestation) : Bool :=
-  let validators := sszGet state validators
+  let validators := state.validators
   let idx := a.attestingIndices.toArray
   if idx.size == 0 || !strictlySorted idx then false
   else match idx.mapM (fun i => getAt validators i) with
@@ -75,7 +75,7 @@ forkdef processProposerSlashing (ps : ProposerSlashing) : StateTransition Unit :
 
   -- `proposer = state.validators[header_1.proposer_index]` (`fulu/minimal.py:2012`): a
   -- raising list read, so an out-of-range proposer rejects with `IndexError`'s class.
-  let proposer ← sszGetIdx (sszGet state validators) h1.proposerIndex
+  let proposer ← sszGetIdx state.validators h1.proposerIndex
   assert (isSlashableValidator proposer (currentEpochOf state))
   assert (blsVerifySigned proposer.pubkey h1
     (getDomain state Const.domainBeaconProposer (computeEpochAtSlot h1.slot)) ps.signedHeader1.signature)
@@ -98,7 +98,7 @@ forkdef processAttesterSlashing (asl : AttesterSlashing) : StateTransition Unit 
   for idx in indices do
     let state ← get
     -- `state.validators[index]`: a raising list read.
-    let validator ← sszGetIdx (sszGet state validators) idx
+    let validator ← sszGetIdx state.validators idx
     if isSlashableValidator validator (currentEpochOf state) then
       slashValidator idx
       slashedAny := true
@@ -123,8 +123,8 @@ the reads bind first and the source check comes last, and a mismatched source ca
 that fault into the caught assert (`SPEC_ARITHMETIC.md` §1). -/
 forkdef getAttestationParticipationFlagIndices (state : State) (data : AttestationData)
     (inclusionDelay : Slot) : StateTransition (Option (Array CLUint64)) := do
-  let justified := if data.target.epoch == currentEpochOf state then sszGet state currentJustifiedCheckpoint
-                   else sszGet state previousJustifiedCheckpoint
+  let justified := if data.target.epoch == currentEpochOf state then state.currentJustifiedCheckpoint
+                   else state.previousJustifiedCheckpoint
   let isMatchingSource := data.source.epoch == justified.epoch && data.source.root == justified.root
   let targetRoot ← getBlockRoot state data.target.epoch
   let isMatchingTarget := data.target.root == targetRoot
@@ -173,7 +173,7 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
   -- `ValueError`, which `process_attestation` does not catch, so the driver scores it
   -- `uncaughtFault`. Sequenced after the two epoch asserts above, matching Python's order.
   let inclusionSlot ← data.slot + Const.minAttestationInclusionDelay
-  assert (inclusionSlot ≤ sszGet state slot)
+  assert (inclusionSlot ≤ state.slot)
   assert (data.index == 0)
 
   -- Every committee index is valid and contributes at least one attester; the
@@ -185,7 +185,7 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
   -- Resolve the participation flags, then validate the aggregate signature. The
   -- inclusion delay is the pyspec's checked `state.slot - data.slot`, bound at the
   -- argument position Python evaluates it.
-  let inclusionDelay ← (sszGet state slot) - data.slot
+  let inclusionDelay ← state.slot - data.slot
   let flagIndices ← match ← getAttestationParticipationFlagIndices state data inclusionDelay with
     | some f => pure f
     | none   => throw (StateTransitionError.assert "is_matching_source")
@@ -214,8 +214,8 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
       -- `sszGetIdx` so an out-of-range index rejects with `outOfBounds` rather than
       -- masking as a default flag.
       if !flagIndices.any (·.toPlainNat == flagIndex) then continue
-      let flag ← if currentTarget then sszGetIdx (sszGet stateAcc currentEpochParticipation) vi
-                 else sszGetIdx (sszGet stateAcc previousEpochParticipation) vi
+      let flag ← if currentTarget then sszGetIdx stateAcc.currentEpochParticipation vi
+                 else sszGetIdx stateAcc.previousEpochParticipation vi
       -- `not has_flag(...)`: the mask `ParticipationFlags(2**flag_index)` raises past
       -- flag index 7, so the test binds (`SPEC_ARITHMETIC.md` §5.1).
       if !(← CLUint8.hasFlag flag flagIndex) then
@@ -225,9 +225,11 @@ forkdef processAttestation (att : Attestation) : StateTransition Unit := do
         -- as Python assigns the `add_flag(...)` result.
         let flag' ← CLUint8.addFlag flag flagIndex
         stateAcc := if currentTarget then
-                   sszUpdate stateAcc with currentEpochParticipation[i]! := flag'
+                   { stateAcc with
+                       currentEpochParticipation := stateAcc.currentEpochParticipation.set! i flag' }
                  else
-                   sszUpdate stateAcc with previousEpochParticipation[i]! := flag'
+                   { stateAcc with
+                       previousEpochParticipation := stateAcc.previousEpochParticipation.set! i flag' }
         let base ← liftErr (getBaseReward state vi)
         let weighted ← base * Const.participationFlagWeights[flagIndex]!
         proposerNum := ← proposerNum + weighted
@@ -283,7 +285,7 @@ forkdef processVoluntaryExit (sve : SignedVoluntaryExit) : StateTransition Unit 
   let ve := sve.message
   -- `validator = state.validators[voluntary_exit.validator_index]` (`fulu/minimal.py:2134`):
   -- a raising list read, so an out-of-range index rejects with `IndexError`'s class.
-  let validator ← sszGetIdx (sszGet state validators) ve.validatorIndex
+  let validator ← sszGetIdx state.validators ve.validatorIndex
 
   assert (isActiveValidator validator (currentEpochOf state))
   assert (hasNotInitiatedExit validator)
@@ -293,7 +295,7 @@ forkdef processVoluntaryExit (sve : SignedVoluntaryExit) : StateTransition Unit 
   let pending ← getPendingBalanceToWithdraw state ve.validatorIndex
   assert (pending == 0)
 
-  let domain := computeDomain Const.domainVoluntaryExit Const.capellaForkVersion (sszGet state genesisValidatorsRoot)
+  let domain := computeDomain Const.domainVoluntaryExit Const.capellaForkVersion state.genesisValidatorsRoot
   assert (blsVerifySigned validator.pubkey ve domain sve.signature)
 
   initiateValidatorExit ve.validatorIndex
@@ -307,13 +309,13 @@ forkdef processBlsToExecutionChange (sbc : SignedBLSToExecutionChange) : StateTr
   -- `assert address_change.validator_index < len(state.validators)`: the checked index
   -- against the plain length, a comparison that never raises. `int(x)` carries the index
   -- into the plain kind, where it meets `len`. The read after it is then in range.
-  assert (ac.validatorIndex.toCLInt < len (sszGet state validators))
-  let validator ← sszGetIdx (sszGet state validators) ac.validatorIndex
+  assert (ac.validatorIndex.toCLInt < len state.validators)
+  let validator ← sszGetIdx state.validators ac.validatorIndex
 
   assert (credPrefix validator.withdrawalCredentials == Const.blsWithdrawalPrefix)
   let h := sha ac.fromBlsPubkey
   assert ((List.range 31).all (fun k => vget validator.withdrawalCredentials (k + 1) == h.get! (k + 1)))
-  let domain := computeDomain Const.domainBlsToExecutionChange Const.genesisForkVersion (sszGet state genesisValidatorsRoot)
+  let domain := computeDomain Const.domainBlsToExecutionChange Const.genesisForkVersion state.genesisValidatorsRoot
   assert (blsVerifySigned ac.fromBlsPubkey ac domain sbc.signature)
 
   let newWc : Bytes32 := Vector.ofFn (fun i : Fin 32 =>
@@ -333,7 +335,7 @@ forkdef processDepositRequest (dr : DepositRequest) : StateTransition Unit := do
   let state ← get
   appendState pendingDeposits
     { pubkey := dr.pubkey, withdrawalCredentials := dr.withdrawalCredentials, amount := dr.amount,
-      signature := dr.signature, slot := sszGet state slot }
+      signature := dr.signature, slot := state.slot }
 
 /-- `process_withdrawal_request` (EIP-7002 / EIP-7251): a full exit, or a partial
 withdrawal for a compounding validator with excess balance. -/
@@ -341,7 +343,7 @@ forkdef processWithdrawalRequest (wr : WithdrawalRequest) : StateTransition Unit
   let state ← get
   let isFullExit := wr.amount == Const.fullExitRequestAmount
   -- Gate: the partial-withdrawal queue has room (full exits bypass the queue cap).
-  if (sszGet state pendingPartialWithdrawals).size == Const.pendingPartialWithdrawalsLimit && !isFullExit then
+  if state.pendingPartialWithdrawals.size == Const.pendingPartialWithdrawalsLimit && !isFullExit then
     pure ()
   else
     match validatorIndexByPubkey? state wr.validatorPubkey with
@@ -349,7 +351,7 @@ forkdef processWithdrawalRequest (wr : WithdrawalRequest) : StateTransition Unit
     | some idxN =>
       -- `index = ValidatorIndex(validator_pubkeys.index(request_pubkey))`: the checked cast.
       let index ← CLUint64.ofNat? idxN
-      let validator ← sszGetIdx (sszGet state validators) index
+      let validator ← sszGetIdx state.validators index
       let correctCred := hasExecutionWithdrawalCredential validator
       let correctSource := vecSliceEq validator.withdrawalCredentials 12 wr.sourceAddress 0 20
       -- Validity ladder: execution credential + matching source, active, not exiting,
@@ -369,7 +371,7 @@ forkdef processWithdrawalRequest (wr : WithdrawalRequest) : StateTransition Unit
           -- the parallel `balances` at it goes through `sszGetIdx`, so a broken
           -- validators/balances length parity rejects with `outOfBounds` rather than
           -- silently reading a default balance.
-          let balance ← sszGetIdx (sszGet state balances) index
+          let balance ← sszGetIdx state.balances index
           let sufficientEff := validator.effectiveBalance ≥ Const.minActivationBalance
           let excessThreshold ← Const.minActivationBalance + pending
           let excess := balance > excessThreshold
@@ -393,7 +395,7 @@ forkdef isValidSwitchToCompoundingRequest (state : State) (req : ConsolidationRe
   else match validatorIndexByPubkey? state req.sourcePubkey with
     | none => false
     | some si =>
-      let validator := sszGet state validators[si]!
+      let validator := state.validators[si]!
       if !(vecSliceEq validator.withdrawalCredentials 12 req.sourceAddress 0 20) then false
       else if !hasEth1WithdrawalCredential validator then false
       else if !isActiveValidator validator (currentEpochOf state) then false
@@ -413,7 +415,7 @@ forkdef processConsolidationRequest (req : ConsolidationRequest) : StateTransiti
     | none    => pure ()
   -- Request-level gates: distinct source/target, queue room, churn capacity.
   else if req.sourcePubkey == req.targetPubkey then pure ()
-  else if (sszGet state pendingConsolidations).size == Const.pendingConsolidationsLimit then pure ()
+  else if state.pendingConsolidations.size == Const.pendingConsolidationsLimit then pure ()
   else if (← liftErr (getConsolidationChurnLimit state)) ≤ Const.minActivationBalance then pure ()
   else
     match validatorIndexByPubkey? state req.sourcePubkey, validatorIndexByPubkey? state req.targetPubkey with
@@ -422,8 +424,8 @@ forkdef processConsolidationRequest (req : ConsolidationRequest) : StateTransiti
       -- pyspec's order (`fulu/minimal.py:6392-6395`).
       let sourceIndex ← CLUint64.ofNat? srcN
       let targetIndex ← CLUint64.ofNat? tgtN
-      let src ← sszGetIdx (sszGet state validators) sourceIndex
-      let tgt ← sszGetIdx (sszGet state validators) targetIndex
+      let src ← sszGetIdx state.validators sourceIndex
+      let tgt ← sszGetIdx state.validators targetIndex
       let correctCred := hasExecutionWithdrawalCredential src
       let correctSource := vecSliceEq src.withdrawalCredentials 12 req.sourceAddress 0 20
       -- Validity ladder: source execution credential + matching source, target
