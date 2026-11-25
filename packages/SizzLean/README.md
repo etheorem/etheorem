@@ -16,20 +16,27 @@
 
 A Lean 4 implementation of Ethereum's
 [SSZ](https://github.com/ethereum/consensus-specs/blob/dev/ssz/simple-serialize.md)
-(Simple Serialize): serialization, deserialization, Merkleization,
-cached-tree machinery, and the `sszUpdate` macro surface, all of
-it sharing one library between production code and machine-checked
-theorems.
+(Simple Serialize): serialization, deserialization and Merkleization
+on plain Lean values, plus an optional cached Merkle tree with the
+`SSZ.Box` and `sszUpdate` surface. Production code and
+machine-checked theorems share the one library.
 
 ## Why SizzLean
 
-- **Write once, pick your backend.** Code written against this
-  library runs on either of two implementations under the hood, a
-  heavily optimised cached Merkle tree for production speed, or a
-  simple uncached version that's friendly to Lean proofs. You
-  choose at the call site; the spec or state-transition function
-  you wrote doesn't change. No duplicated source between the
-  runtime path and the verification path.
+- **Three modes, plain first.** The type you hold picks the mode.
+
+  | Mode | Type the user holds | Reads and writes | Root |
+  |---|---|---|---|
+  | Plain value | `T` with `[SSZRepr T]` | `v.field`, `{ v with field := x }`, `.set!`, `.modify`, `push?` | `SSZ.hashTreeRoot H v`, a full merkleization per call |
+  | Box | `SSZ.Box H T` | `sszGet` / `sszUpdate` | `.hashTreeRoot`, flavour picked at the wrap |
+  | Cache only | `CachedSSZ H T` / `TreeBacked` | `sszGet` / `sszUpdate` | O(1) read after an O(log N) spine rehash |
+
+  The plain mode is a complete surface on its own. It is the
+  verified core, and it uses nothing from `Cache/`. Use it for
+  spec code, proofs and small states; the Ethereum consensus specs
+  in this repository use it. The box runs one source cached in
+  production and uncached in proofs. The cache-only mode serves hot
+  paths that root a large value many times.
 
 - **Validated against Ethereum's test corpus.** Passes both
   upstream SSZ suites from `ethereum/consensus-spec-tests` (release
@@ -51,9 +58,10 @@ theorems.
   when the code is written; the dividend compounds with every new
   contributor.
 
-- **Fast hash-tree-root.** Updates are incremental: only the
-  path from a changed field to the root rehashes. Multi-field
-  updates batch the work across overlapping paths.
+- **Fast hash-tree-root.** In the box and cache-only modes,
+  updates are incremental: only the path from a changed field to
+  the root rehashes. Multi-field updates batch the work across
+  overlapping paths.
 
 - **Zero boilerplate per type.** Add `deriving SSZRepr` to your
   Lean structure and you get serialization, deserialization,
@@ -463,7 +471,9 @@ transitively.
   `Sha256Spec` (pure-Lean) instances; `Sha256Equiv` /
   `Sha256Batch` (the named equivalence axioms, see "Trust
   assumptions you can grep for" above).
-* `Cache/`: both backends and the box layer that unifies them:
+* `Cache/`: optional. A plain `T` with `[SSZRepr T]` needs nothing
+  from this directory. It holds the two backends and the box layer
+  that unifies them:
   * `Cache/TreeBacked.lean`: the **fast / cached** backend
     (`CachedSSZ H T`): production-side, FFI-hashed, O(log N)
     incremental updates.
@@ -474,7 +484,7 @@ transitively.
     into one user-facing sum type, and defines the four smart
     constructors (`SSZ.FastBox` / `SSZ.PureBox` /
     `SSZ.CachedBox` / `SSZ.UncachedBox`). Its module docstring
-    documents the brand axes; start here for the user-facing
+    documents the brand axes; start here for the box
     surface.
   * `Cache/MerkleTree/`: the tree machinery the fast backend
     sits on; `Cache/Update.lean` is the `sszUpdate` macro.
@@ -545,9 +555,9 @@ just ethcl-pyspec-full
 ```
 
 For the full menu, the protocol the harness uses, and how to
-write code that targets `SSZ.FastBox` (production cache) or
-`SSZ.PureBox` (proof-friendly uncached) on a *single* spec body,
-see [`MANUAL.md`](MANUAL.md).
+choose a mode (plain values, or a single spec body that targets
+`SSZ.FastBox` for the production cache or `SSZ.PureBox` for
+proofs), see [`MANUAL.md`](MANUAL.md).
 
 ## Requiring this package
 

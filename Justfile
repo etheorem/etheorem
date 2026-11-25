@@ -148,6 +148,27 @@ proof-coverage-check: proof-coverage-build
 proof-coverage-update: proof-coverage-build
     lake env lean --run scripts/ProofCoverage.lean -- --update
 
+# The CL specs hold plain SSZ values; `SizzLean` keeps the box for other callers.
+# Two steps keep the box out of the specs. The source search finds a box name
+# under `packages/EthCLLib` and `packages/EthCLSpecs/EthCLSpecs`, a macro spelling
+# (`sszGet`, `sszUpdate`) included, which leaves no constant behind. The rule
+# script then reads the built environment and fails when a constant of those
+# trees depends on the box, directly or through other constants, under any
+# spelling. The bench library `EthCLSpecsBench` stays out: its profile measures
+# the cache through `SSZ.FastBox`. The CI `ethcl` job runs this after the build.
+
+# Fail when the CL specs use the SSZ box (source search, then dependency rule)
+[group('general')]
+check-no-box:
+    @if git grep --untracked -nE '\b(SSZ\.Box|UncachedSSZ|CachedSSZ|FastBox|PureBox|CachedBox|UncachedBox|sszGet|sszUpdate|sszModify)\b|\bsszAppend\?' \
+            -- packages/EthCLLib packages/EthCLSpecs/EthCLSpecs; then \
+        printf "\nA box name appears in the CL specs (see lines above).\n" >&2 ; \
+        printf "The specs hold plain values; see packages/EthCLSpecs/docs/FRAMEWORK_ARCHITECTURE.md §5.1.\n" >&2 ; \
+        exit 1; \
+    fi
+    lake build EthCLLib EthCLLibTests EthCLSpecs EthCLSpecsTests pyspec_server
+    lake env lean --run scripts/NoBoxInSpecs.lean
+
 # Check the *build-time native* dependencies. The default profile (`all`)
 # probes everything the family builds need: `cc` and `git`, `pkg-config` +
 # OpenSSL 3.x (which the lakefiles discover via `pkg-config`), the

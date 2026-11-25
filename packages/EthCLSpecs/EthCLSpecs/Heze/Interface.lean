@@ -68,25 +68,27 @@ private def runUpgradeImpl (P : Preset) (forkVersion : Version) (preBytes : Byte
     RunError.ofSpec ((upgradeToHeze forkVersion pre).map fun post => (htr post : ByteArray))
   | .error _ => .error (.decode "Gloas BeaconState")
 
-/-- Decode a Heze `BeaconState` into a `FastBox`, or the runner's `decode` error. -/
+/-- Decode a plain Heze `BeaconState`, or the runner's `decode` error. Heze's `State` is the
+plain record (`state_preamble`), so the runner threads the decoded value itself, and
+each root is a full merkleization of the record through `SSZ.hashTreeRoot`. -/
 private def decodeState (P : Preset) (bytes : ByteArray) :
-    Except (RunError StateTransitionError) (SSZ.Box Sha256 (@Heze.BeaconState P)) :=
+    Except (RunError StateTransitionError) (@Heze.BeaconState P) :=
   letI : Preset := P
-  match SSZ.FastBox.deserialize (T := @Heze.BeaconState P) bytes with
-  | .ok box  => .ok box
-  | .error _ => .error (.decode "BeaconState")
+  match SSZ.deserialize (T := @Heze.BeaconState P) bytes with
+  | .ok state => .ok state
+  | .error _  => .error (.decode "BeaconState")
 
 /-- `runEpochSubstep`: dispatch the `epoch_processing/<handler>` name to its Heze substep,
 run it over the decoded Heze pre-state, return the post root. Every substep is the Gloas
 one re-instantiated over Heze. -/
 private def runEpochSubstepImpl (P : Preset) (C : Config) (step : EpochStep) (preBytes : ByteArray) :
     Except (RunError StateTransitionError) ByteArray := do
-  let box0 ← decodeState P preBytes
+  let state0 ← decodeState P preBytes
   letI : Preset := P
   letI : Config := C
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.realBackend
-  let action : EStateM StateTransitionError (SSZ.Box Sha256 (@Heze.BeaconState P)) Unit :=
+  let action : EStateM StateTransitionError (@Heze.BeaconState P) Unit :=
     match step with
     | .slashingsReset               => processSlashingsReset
     | .randaoMixesReset             => processRandaoMixesReset
@@ -109,7 +111,7 @@ private def runEpochSubstepImpl (P : Preset) (C : Config) (step : EpochStep) (pr
     | .syncCommitteeUpdates         => processSyncCommitteeUpdates
     | .proposerLookahead            => processProposerLookahead
     | .ptcWindow                    => processPtcWindow
-  RunError.ofSpec (runToRoot box0 action)
+  RunError.ofSpec (runToRoot state0 action)
 
 /-- `runRewards`: the four reward-delta blobs computed by the inherited Heze delta
 functions. The `Deltas` container is this fork's replayed copy. -/
@@ -118,12 +120,11 @@ private def runRewardsImpl (P : Preset) (C : Config) (preBytes : ByteArray) :
   let state ← decodeState P preBytes
   letI : Preset := P
   letI : Config := C
-  letI : HasherTag := fastHasherTag
   -- `Deltas(rewards=…, penalties=…)` builds two `List`s, which raise on too many elements.
   let mkDeltas : Array Gwei × Array Gwei → Except StateTransitionError ByteArray := fun rp => do
     pure (SSZ.serialize ({ rewards := ← sszOfArrayM "rewards" rp.1,
                            penalties := ← sszOfArrayM "penalties" rp.2 } : Deltas))
-  let n := (sszGet state validators).size
+  let n := state.validators.size
   let zeros := Array.replicate n (0 : Gwei)
   RunError.ofSpec do
     let d0 ← liftErr (getFlagIndexDeltas state 0)
@@ -133,7 +134,7 @@ private def runRewardsImpl (P : Preset) (C : Config) (preBytes : ByteArray) :
     pure #[← mkDeltas d0, ← mkDeltas d1, ← mkDeltas d2,
       ← mkDeltas (zeros, inactPenalties)]
 
-/-- Decode a plain (non-boxed) SSZ operation value. -/
+/-- Decode an SSZ operation value, or the runner's `decode` error. -/
 private def decodeOp (T : Type) [SizzLean.SSZRepr T] (b : ByteArray) :
     Except (RunError StateTransitionError) T :=
   match SSZ.deserialize (T := T) b with
@@ -147,12 +148,12 @@ private def decodeOp (T : Type) [SizzLean.SSZRepr T] (b : ByteArray) :
 set_option maxHeartbeats 1000000 in
 private def runOperationImpl (P : Preset) (C : Config) (kind : OpKind)
     (preBytes opBytes : ByteArray) (cmeta : CaseMeta) : Except (RunError StateTransitionError) ByteArray := do
-  let box0 ← decodeState P preBytes
+  let state0 ← decodeState P preBytes
   letI : Preset := P
   letI : Config := C
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.forBlsSetting cmeta.blsSetting
-  let dispatch : Except (RunError StateTransitionError) (EStateM StateTransitionError (SSZ.Box Sha256 (@Heze.BeaconState P)) Unit) :=
+  let dispatch : Except (RunError StateTransitionError) (EStateM StateTransitionError (@Heze.BeaconState P) Unit) :=
     match kind with
     | .proposerSlashing       => (decodeOp (@ProposerSlashing P) opBytes).map processProposerSlashing
     | .attesterSlashing       => (decodeOp (@AttesterSlashing P) opBytes).map processAttesterSlashing
@@ -188,30 +189,30 @@ private def runOperationImpl (P : Preset) (C : Config) (kind : OpKind)
   match dispatch with
   | .error e   => .error e
   | .ok action =>
-    RunError.ofSpec (runToRoot box0 action)
+    RunError.ofSpec (runToRoot state0 action)
 
 /-- `runSlots`: advance the decoded Heze pre-state by `n` empty slots. -/
 private def runSlotsImpl (P : Preset) (C : Config) (preBytes : ByteArray) (n : Nat) :
     Except (RunError StateTransitionError) ByteArray := do
-  let box0 ← decodeState P preBytes
+  let state0 ← decodeState P preBytes
   letI : Preset := P
   letI : Config := C
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.realBackend
-  let action : EStateM StateTransitionError (SSZ.Box Sha256 (@Heze.BeaconState P)) Unit := do
+  let action : EStateM StateTransitionError (@Heze.BeaconState P) Unit := do
     let state ← get
     -- The harness's `state.slot + slots`: the checked `Slot` add of the plain `int` slot
     -- count, so a target past `2^64 - 1` raises (§4.2).
-    let target ← (sszGet state slot) + n
+    let target ← state.slot + n
     processSlots target
-  RunError.ofSpec (runToRoot box0 action)
+  RunError.ofSpec (runToRoot state0 action)
 
 set_option maxHeartbeats 1000000 in
 /-- `runBlocks` (`sanity/blocks`, `finality`, `random`): fold the Heze `state_transition`
 over the decoded signed blocks. -/
 private def runBlocksImpl (P : Preset) (C : Config) (preBytes : ByteArray)
     (blocks : Array ByteArray) (cmeta : CaseMeta) : Except (RunError StateTransitionError) ByteArray := do
-  let box0 ← decodeState P preBytes
+  let state0 ← decodeState P preBytes
   let signedBlocks ← blocks.mapM (fun bb =>
     match SSZ.deserialize (T := @Heze.SignedBeaconBlock P) bb with
     | .ok sb   => .ok sb
@@ -220,16 +221,17 @@ private def runBlocksImpl (P : Preset) (C : Config) (preBytes : ByteArray)
   letI : Config := C
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.forBlsSetting cmeta.blsSetting
-  let action : EStateM StateTransitionError (SSZ.Box Sha256 (@Heze.BeaconState P)) Unit := do
+  let action : EStateM StateTransitionError (@Heze.BeaconState P) Unit := do
     for sb in signedBlocks do stateTransition sb
-  RunError.ofSpec (runToRoot box0 action)
+  RunError.ofSpec (runToRoot state0 action)
 
 set_option maxHeartbeats 1000000 in
 /-- `runTransition` (the `transition` format, Gloas→Heze): fold the pre-fork blocks under
 Gloas `state_transition`, advance the Gloas state to the fork-epoch boundary, apply
 `upgradeToHeze` (see its docstring), then fold the post-fork blocks under the
 Heze spine. Unqualified spine names resolve to the Heze copies; the pre-fork Gloas calls are
-qualified. -/
+qualified. Both legs run on the plain record: the Gloas leg threads the decoded Gloas state,
+and the Heze leg threads the state that `upgradeToHeze` returns. -/
 private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
     (preBytes : ByteArray) (blocks : Array ByteArray) (cmeta : CaseMeta) :
     Except (RunError StateTransitionError) ByteArray :=
@@ -264,23 +266,21 @@ private def runTransitionImpl (P : Preset) (C : Config) (forkVersion : Version)
       match SSZ.deserialize (T := @Heze.SignedBeaconBlock P) bb with
       | .ok sb   => Except.ok sb
       | .error _ => Except.error (RunError.decode "Heze SignedBeaconBlock"))
-    let gloasBox0 : SSZ.Box Sha256 (Gloas.BeaconState) := SSZ.FastBox preGloas
-    let gloasAction : EStateM StateTransitionError (SSZ.Box Sha256 (Gloas.BeaconState)) Unit := do
+    let gloasAction : EStateM StateTransitionError (Gloas.BeaconState) Unit := do
       for sb in preBlocks do Gloas.stateTransition sb
-      if (sszGet (← get) slot) < boundary then Gloas.processSlots boundary
-    match gloasAction.run gloasBox0 with
+      if (← get).slot < boundary then Gloas.processSlots boundary
+    match gloasAction.run preGloas with
     | .error e _ => Except.error (RunError.spec e)
     | .ok _ gloasSt =>
-      let hezePost ← RunError.ofSpec (upgradeToHeze forkVersion gloasSt.view)
-      let hezeBox0 : SSZ.Box Sha256 (@Heze.BeaconState P) := SSZ.FastBox hezePost
-      let hezeAction : EStateM StateTransitionError (SSZ.Box Sha256 (@Heze.BeaconState P)) Unit := do
+      let hezePost ← RunError.ofSpec (upgradeToHeze forkVersion gloasSt)
+      let hezeAction : EStateM StateTransitionError (@Heze.BeaconState P) Unit := do
         for sb in postBlocks do
-          if (sszGet (← get) slot) < sb.message.slot then processSlots sb.message.slot
+          if (← get).slot < sb.message.slot then processSlots sb.message.slot
           if cmeta.blsSetting != 2 then assert (verifyBlockSignature (← get) sb)
           processBlock sb.message
           let root ← getStateRoot
           assert (sb.message.stateRoot == bytesToRoot root)
-      RunError.ofSpec (runToRoot hezeBox0 hezeAction)
+      RunError.ofSpec (runToRoot hezePost hezeAction)
 
 /-- Run `getHead` over the snapshot store as a pure query (`runQuery` discards the final
 store; `getHead` only reads it). Shared by the `checkHead` / `checkHeadPayloadStatus` arms,
@@ -429,7 +429,7 @@ private def runForkChoiceImpl (P : Preset) (C : Config) (anchorStateBytes anchor
   letI : Config := C
   letI : HasherTag := fastHasherTag
   letI : CryptoBackend := CryptoBackend.realBackend
-  match SSZ.FastBox.deserialize (T := @Heze.BeaconState P) anchorStateBytes,
+  match SSZ.deserialize (T := @Heze.BeaconState P) anchorStateBytes,
         SSZ.deserialize (T := @Heze.BeaconBlock P) anchorBlockBytes with
   | .error _, _ => .error (.decode "fork_choice anchor state")
   | _, .error _ => .error (.decode "fork_choice anchor block")

@@ -4,6 +4,7 @@ import EthCLLib.Tests.ForkScoping
 import EthCLLib.Tests.TierMerge
 import EthCLLib.Tests.CryptoBackendSpike
 import EthCLLib.Tests.ContainerForm
+import EthCLLib.Tests.LineageGapCheck
 import EthCLLib.Tests.FrameworkUtils
 import EthCLLib.Tests.ErrorClassify
 import EthCLLib.Tests.PreambleSection

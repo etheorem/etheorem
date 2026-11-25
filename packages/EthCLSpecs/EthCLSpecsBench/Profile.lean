@@ -33,7 +33,7 @@ columns and `just sizzlean-bench-diff` compares either one.
 | `deserialize` | wire bytes → container value, per type |
 | `serialize` | container value → wire bytes, per type |
 | `htr` | merkleization of a container value, per type |
-| `FastBox` | the cached path the pyspec driver actually takes |
+| `FastBox` | SizzLean's cached box, the first root of a fresh tree, against the plain `htr` row |
 | `stateTransition` | the end-to-end workload the hints must not slow |
 | `ForkInterface` | the same work through the driver's preset-generic seam |
 
