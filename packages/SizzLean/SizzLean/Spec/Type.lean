@@ -84,7 +84,7 @@ inductive SSZType where
   | progressiveContainer : (active : List Bool) → (fields : List SSZType) → SSZType
   deriving Hashable
 
--- TODO: `DecidableEq SSZType`. Lean 4.34.1's nested-inductive
+-- TODO: `DecidableEq SSZType`. Lean 4.36.0's nested-inductive
 -- deriving handler cannot compose `DecidableEq` through the
 -- recursive `List SSZType` field in `container`, so the instance
 -- has to be hand-rolled when a consumer first needs it (likely

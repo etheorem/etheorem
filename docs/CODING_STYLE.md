@@ -586,7 +586,7 @@ fuel-bounded loop `pcLoop` (`EthCLSpecs/Fulu/EpochProcessing.lean:pcLoop`) is ex
 structural recursion, and the well-founded `cbwsAux`
 (`EthCLSpecs/Fulu/Committees.lean:cbwsAux`) for its `termination_by`. The `Node.ofShape` mutual block
 (`SizzLean/Cache/MerkleTree/Build.lean`) is split into mutual helpers because Lean
-4.34.1 rejects passing `Node.ofShape` itself as a higher-order argument, as its
+4.36.0 rejects passing `Node.ofShape` itself as a higher-order argument, as its
 "Why structural mutual recursion" note records. These helpers are tolerated
 even when they take many parameters (`cbwsAux` threads ten binders). That parameter count
 is itself a smell, and it is the price of the termination proof. Do not copy the

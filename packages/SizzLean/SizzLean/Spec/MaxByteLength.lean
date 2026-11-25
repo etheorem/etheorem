@@ -45,7 +45,7 @@ in a `mutual` block, same shape as `Spec/Serialize.lean`'s
 ## Lean idioms used here
 
 * `mutual ... end`: needed because the `container` recursion
-  descends into a `List SSZType`, and Lean 4.34.1's
+  descends into a `List SSZType`, and Lean 4.36.0's
   structural-recursion checker rejects higher-order recursion
   through `List.foldr`. Same workaround `Spec/Interp.lean` /
   `Spec/Serialize.lean` use; see `Spec/Interp.lean`'s docstring

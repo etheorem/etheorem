@@ -365,7 +365,7 @@ def SSZList.modify {α : Type} {cap : Nat}
 
 /-- Replace the `i`-th element of a `Vector` with `f` applied to it. Out of range the
 vector is returned unchanged, as with core `Vector.set!`. Core `Vector` has no `modify`
-at toolchain v4.34.1, so SizzLean adds one in the `Vector` namespace (`_root_`), where
+at toolchain v4.36.0, so SizzLean adds one in the `Vector` namespace (`_root_`), where
 dot notation finds it. Delete this definition when the toolchain ships its own.
 `SizzLean.Proofs.vectorModify_eq_set!` restates it as `set!`. -/
 def _root_.Vector.modify {α : Type} {n : Nat} (xs : Vector α n) (i : Nat) (f : α → α) :
