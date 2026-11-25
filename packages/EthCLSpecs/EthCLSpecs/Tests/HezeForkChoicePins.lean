@@ -547,9 +547,9 @@ private def pinBits (equiv : Array ValidatorIndex) (onlyTimely : Bool) : List Bo
 
 /-- `is_inclusion_list_bits_inclusive` against the timely local view `[true, false, …]`: bits
 that set position 0 are inclusive, and bits that miss it are not. -/
-private def pinInclusive (given : List Nat) : Bool :=
+private def pinInclusive (positions : List Nat) : Bool :=
   letI : Preset := minimal
-  let bits := given.foldl (fun b i => bitSet b i true) (default : Bitvector 16)
+  let bits := positions.foldl (fun b i => bitSet b i true) (default : Bitvector 16)
   isInclusionListBitsInclusive (pinTwoLists #[]) pinCommittee 0 pinKey bits
 
 #guard pinInclusive [0] = true
